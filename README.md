@@ -21,6 +21,7 @@ An in-house, MS Project–style planning tool for Neoteric Properties, built fro
 | [05 – UI/UX design](docs/05-UI-UX-DESIGN.md) | How Nexora standards are applied |
 | [06 – Scheduling engine](docs/06-SCHEDULING-ENGINE.md) | How dates and the critical path are calculated |
 | [07 – Deployment guide](docs/07-DEPLOYMENT-GUIDE.md) | Atlas → GitHub → Render → Vercel, step by step |
+| [08 – Feature gap & roadmap](docs/08-FEATURE-GAP-AND-ROADMAP.md) | 100-feature comparison with OpenProject and phased plan |
 
 ## Run locally
 
