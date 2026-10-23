@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, CalendarDays, Info, Pencil, Plus, ShieldAlert, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { BarChart3, CalendarDays, Info, Pencil, Plus, ShieldAlert, Tags, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -58,6 +58,7 @@ export default function ProjectSettingsPage() {
       </Card>
 
       <CalendarCard project={project} canManage={canManage} />
+      <CategoriesCard project={project} canManage={canManage} />
       <MembersCard project={project} canManage={canManage} />
       <BaselineCard project={project} canManage={canManage} />
       {project.myRole === 'owner' && <DangerZone project={project} />}
@@ -156,6 +157,82 @@ function CalendarCard({ project, canManage }: { project: Project; canManage: boo
             </div>
           )}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function CategoriesCard({ project, canManage }: { project: Project; canManage: boolean }) {
+  const update = useUpdateProject(project._id);
+  const [name, setName] = useState('');
+  const categories = project.categories ?? [];
+
+  const save = async (next: { _id?: string; name: string }[], message: string) => {
+    try {
+      await update.mutateAsync({ categories: next });
+      void toastSuccess(message);
+    } catch (err) {
+      void toastError(errorMessage(err));
+    }
+  };
+
+  const rename = async (id: string, current: string) => {
+    const Swal = (await import('sweetalert2')).default;
+    const result = await Swal.fire({ title: 'Rename category', input: 'text', inputValue: current, showCancelButton: true, confirmButtonText: 'Save' });
+    if (!result.isConfirmed || !String(result.value).trim()) return;
+    await save(categories.map((c) => (c._id === id ? { _id: c._id, name: String(result.value).trim() } : c)), 'Category renamed');
+  };
+
+  return (
+    <Card title="Categories" icon={Tags}>
+      <div className="p-5 space-y-4">
+        <p className="text-sm text-gray-600 dark:text-gray-400">Group tasks by area of work (e.g. Civil, MEP, Interiors). Use them in filters, the board and the table.</p>
+        {canManage && (
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!name.trim()) return;
+              void save([...categories, { name: name.trim() }], 'Category added').then(() => setName(''));
+            }}
+          >
+            <input className={inputCls} value={name} maxLength={60} placeholder="New category name" onChange={(e) => setName(e.target.value)} aria-label="New category name" />
+            <Button type="submit" icon={Plus} disabled={!name.trim()} loading={update.isPending}>
+              Add
+            </Button>
+          </form>
+        )}
+        {categories.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500">No categories yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <span key={c._id} className="inline-flex items-center gap-1 pl-3 pr-1 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                {c.name}
+                {canManage && (
+                  <>
+                    <button type="button" onClick={() => rename(c._id, c.name)} className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600" aria-label={`Rename ${c.name}`} title="Rename">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (await confirmDanger(`Remove the category "${c.name}"?`, 'Tasks in this category become uncategorised.', 'Remove')) {
+                          await save(categories.filter((x) => x._id !== c._id), 'Category removed');
+                        }
+                      }}
+                      className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600"
+                      aria-label={`Remove ${c.name}`}
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </Card>
   );

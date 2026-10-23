@@ -9,7 +9,7 @@ import { schedule } from '../scheduling/scheduler';
 /** Fields persisted for each task (everything except identity/audit timestamps). */
 const PERSISTED_FIELDS = [
   'parent', 'order', 'name', 'duration', 'constraintStart', 'percentComplete', 'predecessors', 'resources', 'notes',
-  'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
+  'type', 'status', 'priority', 'assignee', 'accountable', 'category', 'watchers', 'number', 'manual', 'relations', 'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
   'outlineLevel', 'rowNumber', 'updatedBy',
 ] as const;
 
@@ -55,6 +55,8 @@ export async function mutatePlan(
   for (const t of working) {
     // Drop links/parents that point at tasks that no longer exist.
     t.predecessors = t.predecessors.filter((l) => ids.has(l.task.toString()));
+    t.relations = (t.relations ?? []).filter((r) => ids.has(r.task.toString()));
+    if (t.number == null) t.number = project.taskSeq = (project.taskSeq ?? 0) + 1;
     if (t.parent && !ids.has(t.parent.toString())) t.parent = null;
   }
 
@@ -69,6 +71,7 @@ export async function mutatePlan(
       constraintStart: t.constraintStart,
       percentComplete: t.percentComplete,
       predecessors: t.predecessors.map((l) => ({ task: l.task.toString(), type: l.type, lag: l.lag })),
+      manual: t.manual,
     })),
   );
 

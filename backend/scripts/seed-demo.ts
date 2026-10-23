@@ -72,9 +72,13 @@ async function main() {
     ['Handover to client', 0, 1, ['Snagging & cleaning'], [], 0],
   ];
 
+  const ws0 = await call<{ types: { _id: string; name: string }[] }>('/work-settings');
+  const phaseType = ws0.types.find((t) => t.name === 'Phase')?._id;
   const ids: Record<string, string> = {};
-  for (const [taskName, duration] of plan) {
-    const r = await call<Plan>(`${base}/tasks`, 'POST', { name: taskName, duration: Math.max(duration, 0) });
+  for (const [taskName, duration, level] of plan) {
+    // Level-0 rows become summary "phases"; level-1 milestones have duration 0.
+    const body = level === 0 ? { name: taskName, duration: 1, ...(phaseType ? { type: phaseType } : {}) } : { name: taskName, duration };
+    const r = await call<Plan>(`${base}/tasks`, 'POST', body);
     ids[taskName] = r.createdTaskId!;
   }
   // Indent level-1 tasks under the summary above them.
@@ -88,6 +92,29 @@ async function main() {
       percentComplete: pct,
     });
   }
+  // Phase 2 attributes: statuses, categories, priorities, assignee — so boards and filters have data.
+  const me = await call<{ user: { _id: string } }>('/auth/me');
+  const ws = await call<{ statuses: { _id: string; name: string }[] }>('/work-settings');
+  const statusId = (n: string) => ws.statuses.find((s) => s.name === n)?._id;
+  const cats = await call<{ project: { categories: { _id: string; name: string }[] } }>(base, 'PATCH', {
+    categories: [{ name: 'Design' }, { name: 'Civil' }, { name: 'MEP' }, { name: 'Interiors' }],
+  });
+  const catId = (n: string) => cats.project.categories.find((c) => c.name === n)?._id;
+  const areas: Record<string, string> = {
+    'Site survey': 'Design', 'Concept design': 'Design', 'Detailed drawings': 'Design', Demolition: 'Civil',
+    'Partitions & ceilings': 'Civil', Flooring: 'Civil', 'Electrical wiring': 'MEP', 'HVAC ducting': 'MEP',
+    'Fire safety systems': 'MEP', 'Order furniture': 'Interiors', 'Furniture installation': 'Interiors', 'Snagging & cleaning': 'Interiors',
+  };
+  for (const [taskName, , level, , , pct] of plan) {
+    if (level !== 1) continue;
+    await call(`${base}/tasks/${ids[taskName]}`, 'PATCH', {
+      status: pct >= 100 ? statusId('Closed') : pct > 0 ? statusId('In progress') : statusId('New'),
+      ...(areas[taskName] ? { category: catId(areas[taskName]) } : {}),
+      ...(['Detailed drawings', 'Demolition', 'Fire safety systems'].includes(taskName) ? { priority: 'high' } : {}),
+      ...(['Detailed drawings', 'Partitions & ceilings', 'Snagging & cleaning'].includes(taskName) ? { assignee: me.user._id } : {}),
+    });
+  }
+
   await call(`${base}/baseline`, 'POST');
   // Slip one task after the baseline so the comparison is visible.
   await call(`${base}/tasks/${ids['Detailed drawings']}`, 'PATCH', { duration: 8 });

@@ -2,8 +2,10 @@
 
 import { AlertTriangle, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Diamond, Pencil, StickyNote } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
+import { Avatar, StatusBadge, TypeLabel } from '@/components/ui/TaskBits';
 import { cn } from '@/lib/cn';
 import { fmtShort } from '@/lib/dates';
+import type { QueryContext } from '@/lib/query';
 import { taskStatus } from '@/lib/status';
 import type { Task } from '@/lib/types';
 import { HEADER_H, ROW_H } from './GanttChart';
@@ -12,19 +14,22 @@ import { formatPredecessors } from './predecessors';
 export type EditableField = 'name' | 'duration' | 'start' | 'predecessors' | 'percentComplete';
 
 export const GRID_COLUMNS = [
+  { key: 'check', label: '', width: 32 },
   { key: 'row', label: '#', width: 44 },
   { key: 'ind', label: '', width: 30 },
   { key: 'name', label: 'Task name', width: 280 },
   { key: 'duration', label: 'Duration', width: 84 },
   { key: 'start', label: 'Start', width: 112 },
   { key: 'finish', label: 'Finish', width: 112 },
+  { key: 'status', label: 'Status', width: 130 },
+  { key: 'assignee', label: 'Assignee', width: 140 },
   { key: 'predecessors', label: 'Predecessors', width: 110 },
   { key: 'resources', label: 'Resources', width: 150 },
   { key: 'percentComplete', label: '% Done', width: 72 },
 ] as const;
 export const GRID_FULL_WIDTH = GRID_COLUMNS.reduce((a, c) => a + c.width, 0);
 /** Width up to and including the Finish column — the default view. */
-export const GRID_DEFAULT_WIDTH = 44 + 30 + 280 + 84 + 112 + 112;
+export const GRID_DEFAULT_WIDTH = 32 + 44 + 30 + 280 + 84 + 112 + 112;
 
 interface TaskGridProps {
   rows: Task[];
@@ -39,12 +44,19 @@ interface TaskGridProps {
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
   onCommit: (task: Task, field: EditableField, value: string) => void;
+  ctx: QueryContext;
+  checked: Set<string>;
+  onCheck: (id: string, range: boolean) => void;
+  onCheckAll: () => void;
+  /** Rows not matching the active filter (shown faded as context). */
+  matched?: Set<string>;
 }
 
 const cellBase = 'h-full flex items-center px-2 text-sm whitespace-nowrap border-r border-gray-100 dark:border-gray-700/60 shrink-0 overflow-hidden';
 
 export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
-  const { rows, byId, resourceNames, selectedId, collapsed, canEdit, today, editRequest, onSelect, onOpen, onToggle, onCommit } = props;
+  const { rows, byId, resourceNames, selectedId, collapsed, canEdit, today, editRequest, onSelect, onOpen, onToggle, onCommit, ctx, checked, onCheck, onCheckAll, matched } = props;
+  const allChecked = rows.length > 0 && rows.every((t) => checked.has(t._id));
   const [editing, setEditing] = useState<{ taskId: string; field: EditableField } | null>(null);
 
   useEffect(() => {
@@ -70,7 +82,11 @@ export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
             style={{ width: c.width }}
             className="h-full flex items-end pb-2 px-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-gray-200 dark:border-gray-700 shrink-0 whitespace-nowrap"
           >
-            {c.label}
+            {c.key === 'check' && canEdit ? (
+              <input type="checkbox" checked={allChecked} onChange={onCheckAll} className="w-4 h-4 accent-[var(--theme-primary)]" aria-label="Select all visible tasks" title="Select all" />
+            ) : (
+              c.label
+            )}
           </div>
         ))}
       </div>
@@ -99,10 +115,23 @@ export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
             onClick={() => onSelect(t._id)}
             className={cn(
               'flex border-b border-gray-100 dark:border-gray-700/60 group cursor-default',
-              selected ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50',
+              selected || checked.has(t._id) ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50',
               t.isSummary && 'font-semibold',
+              matched && !matched.has(t._id) && 'opacity-50',
             )}
           >
+            {/* Selection checkbox */}
+            <div style={{ width: 32 }} className={cn(cellBase, 'justify-center px-0')} onClick={(e) => e.stopPropagation()}>
+              {canEdit && (
+                <input
+                  type="checkbox"
+                  checked={checked.has(t._id)}
+                  onChange={(e) => onCheck(t._id, (e.nativeEvent as MouseEvent).shiftKey)}
+                  className="w-4 h-4 accent-[var(--theme-primary)]"
+                  aria-label={`Select ${t.name}`}
+                />
+              )}
+            </div>
             {/* # */}
             <div style={{ width: 44 }} className={cn(cellBase, 'justify-between text-xs text-gray-400 tabular-nums font-normal')} onDoubleClick={() => onOpen(t._id)}>
               <span>{t.rowNumber}</span>
@@ -166,6 +195,9 @@ export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
                   ) : (
                     <span className="w-4 shrink-0" />
                   )}
+                  {!t.isSummary && !t.isMilestone && t.type && ctx.types.get(t.type) && !ctx.types.get(t.type)!.isDefault && (
+                    <TypeLabel type={ctx.types.get(t.type)} className="shrink-0" />
+                  )}
                   <span className="truncate text-gray-900 dark:text-white" title={t.name}>
                     {t.name}
                   </span>
@@ -186,6 +218,19 @@ export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
             {/* Finish */}
             <div style={{ width: 112 }} className={cn(cellBase, 'tabular-nums text-gray-700 dark:text-gray-300 font-normal')} title="Calculated from start and duration">
               {fmtShort(t.finish)}
+            </div>
+
+            {/* Status & assignee */}
+            <div style={{ width: 130 }} className={cn(cellBase, 'font-normal')} onDoubleClick={() => onOpen(t._id)}>
+              <StatusBadge status={t.status ? ctx.statuses.get(t.status) : undefined} />
+            </div>
+            <div style={{ width: 140 }} className={cn(cellBase, 'gap-1.5 font-normal text-gray-700 dark:text-gray-300')} onDoubleClick={() => onOpen(t._id)}>
+              {t.assignee && (
+                <>
+                  <Avatar size="xs" name={ctx.people.get(t.assignee)?.name} />
+                  <span className="truncate">{ctx.people.get(t.assignee)?.name}</span>
+                </>
+              )}
             </div>
 
             {/* Predecessors */}

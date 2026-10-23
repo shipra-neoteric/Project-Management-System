@@ -1,13 +1,17 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { z } from 'zod';
-import { loadProject } from '../middleware/projectAccess';
+import { loadProject, roleFor, ROLE_RANK } from '../middleware/projectAccess';
+import { PRIORITIES } from '../models/Catalog';
+import { Project, type ProjectDoc } from '../models/Project';
 import { Resource } from '../models/Resource';
-import type { PlanTask } from '../models/Task';
+import { RELATION_TYPES, type PlanTask } from '../models/Task';
+import { User } from '../models/User';
 import { isISODate } from '../scheduling/calendar';
 import { LINK_TYPES } from '../scheduling/scheduler';
+import { getCatalog, type Catalog } from '../services/catalog';
 import { loadTasks, mutatePlan, serializeProject } from '../services/planService';
-import { badRequest, notFound, parseBody } from '../utils/http';
+import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
 
 /** Mounted at /api/projects/:id/tasks */
 export const tasksRouter = Router({ mergeParams: true });
@@ -16,37 +20,140 @@ const objectId = z.string().refine((v) => Types.ObjectId.isValid(v), 'Invalid id
 const isoDate = z.string().refine(isISODate, 'Use a valid date (YYYY-MM-DD)');
 const duration = z.number().int('Duration must be whole days').min(0).max(10_000);
 
-const createSchema = z.object({
+/** Fields that can be set on one task or in bulk. */
+const attributeSchema = z.object({
+  type: objectId.optional(),
+  status: objectId.optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  assignee: objectId.nullable().optional(),
+  accountable: objectId.nullable().optional(),
+  category: objectId.nullable().optional(),
+  percentComplete: z.number().min(0).max(100).optional(),
+});
+
+const createSchema = attributeSchema.extend({
   name: z.string().trim().min(1, 'Task name is required').max(255),
   duration: duration.optional().default(1),
   afterTaskId: objectId.nullish(),
   constraintStart: isoDate.nullish(),
 });
 
-const updateSchema = z.object({
+const updateSchema = attributeSchema.extend({
   name: z.string().trim().min(1, 'Task name is required').max(255).optional(),
   duration: duration.optional(),
   constraintStart: isoDate.nullable().optional(),
-  percentComplete: z.number().min(0).max(100).optional(),
+  manual: z.boolean().optional(),
   predecessors: z
     .array(z.object({ task: objectId, type: z.enum(LINK_TYPES).default('FS'), lag: z.number().int().min(-1000).max(1000).default(0) }))
     .max(100)
     .optional(),
+  relations: z.array(z.object({ task: objectId, type: z.enum(RELATION_TYPES).default('relates') })).max(100).optional(),
   resources: z.array(objectId).max(50).optional(),
   notes: z.string().max(5000).optional(),
 });
 
+const idsSchema = z.array(objectId).min(1, 'Select at least one task').max(1000);
+const bulkSchema = z.object({ taskIds: idsSchema, patch: attributeSchema });
+const transferSchema = z.object({ taskIds: idsSchema, targetProjectId: objectId, mode: z.enum(['copy', 'move']) });
 const moveSchema = z.object({ action: z.enum(['up', 'down', 'indent', 'outdent']) });
 
 const sameParent = (a: PlanTask, b: PlanTask) => String(a.parent ?? '') === String(b.parent ?? '');
-const siblingsOf = (tasks: PlanTask[], t: PlanTask) =>
-  tasks.filter((x) => sameParent(x, t)).sort((a, b) => a.order - b.order);
+const siblingsOf = (tasks: PlanTask[], t: PlanTask) => tasks.filter((x) => sameParent(x, t)).sort((a, b) => a.order - b.order);
+const oid = (v: string) => new Types.ObjectId(v);
 
 function findTask(tasks: PlanTask[], id: string) {
   const task = tasks.find((t) => t._id.toString() === id);
   if (!task) throw notFound('Task');
   return task;
 }
+
+/** The given tasks plus all of their descendants. */
+function withDescendants(tasks: PlanTask[], ids: Iterable<string>): Set<string> {
+  const set = new Set(ids);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const t of tasks) {
+      if (t.parent && set.has(t.parent.toString()) && !set.has(t._id.toString())) {
+        set.add(t._id.toString());
+        grew = true;
+      }
+    }
+  }
+  return set;
+}
+
+/** Validates attribute ids against the catalog and project; returns a function applying them to a task. */
+async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attributeSchema>, catalog: Catalog) {
+  if (patch.type && !catalog.types.some((t) => String(t._id) === patch.type)) throw badRequest('Unknown task type');
+  if (patch.status && !catalog.statuses.some((s) => String(s._id) === patch.status)) throw badRequest('Unknown status');
+  if (patch.category && !project.categories.some((c) => String(c._id) === patch.category)) throw badRequest('Unknown category for this project');
+  for (const field of ['assignee', 'accountable'] as const) {
+    const userId = patch[field];
+    if (!userId) continue;
+    const user = await User.findById(userId);
+    if (!user || !user.isActive || !isProjectPerson(project, userId)) {
+      throw badRequest(`The ${field} must be a member of this project`);
+    }
+  }
+  const closed = new Set(catalog.statuses.filter((s) => s.isClosed).map((s) => String(s._id)));
+
+  return (task: PlanTask) => {
+    if (patch.type !== undefined) task.type = oid(patch.type);
+    if (patch.priority !== undefined) task.priority = patch.priority;
+    if (patch.assignee !== undefined) task.assignee = patch.assignee ? oid(patch.assignee) : null;
+    if (patch.accountable !== undefined) task.accountable = patch.accountable ? oid(patch.accountable) : null;
+    if (patch.category !== undefined) task.category = patch.category ? oid(patch.category) : null;
+    if (patch.percentComplete !== undefined && !task.isSummary) task.percentComplete = Math.round(patch.percentComplete);
+    if (patch.status !== undefined) {
+      const changed = String(task.status ?? '') !== patch.status;
+      task.status = oid(patch.status);
+      // Closing a task marks it as done.
+      if (changed && closed.has(patch.status) && !task.isSummary) task.percentComplete = 100;
+    }
+  };
+}
+
+const isProjectPerson = (project: ProjectDoc, userId: string) =>
+  String(project.owner) === userId || project.members.some((m) => String(m.user) === userId);
+
+function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<PlanTask> & Pick<PlanTask, 'name' | 'duration' | 'type' | 'status'>): PlanTask {
+  return {
+    _id: new Types.ObjectId(),
+    project: project._id,
+    parent: null,
+    order: Number.MAX_SAFE_INTEGER,
+    constraintStart: null,
+    percentComplete: 0,
+    predecessors: [],
+    resources: [],
+    notes: '',
+    priority: 'normal',
+    assignee: null,
+    accountable: null,
+    category: null,
+    watchers: [],
+    number: null,
+    manual: false,
+    relations: [],
+    baselineStart: null,
+    baselineFinish: null,
+    start: '',
+    finish: '',
+    isSummary: false,
+    isMilestone: false,
+    isCritical: false,
+    totalSlack: 0,
+    wbs: '',
+    outlineLevel: 0,
+    rowNumber: 0,
+    createdBy: userId,
+    updatedBy: userId,
+    ...fields,
+  };
+}
+
+// ---- Routes -----------------------------------------------------------------------------------
 
 tasksRouter.get('/', loadProject('viewer'), async (req, res) => {
   res.json({ project: await serializeProject(req.project!, req.user!), tasks: await loadTasks(req.project!._id) });
@@ -55,49 +162,32 @@ tasksRouter.get('/', loadProject('viewer'), async (req, res) => {
 tasksRouter.post('/', loadProject('member'), async (req, res) => {
   const body = parseBody(createSchema, req.body);
   const project = req.project!;
-  const newId = new Types.ObjectId();
+  const catalog = await getCatalog();
+  const apply = await prepareAttributes(project, body, catalog);
+  const task = newTask(project, req.user!._id, {
+    name: body.name,
+    duration: body.duration,
+    constraintStart: body.constraintStart ?? null,
+    type: body.type ? oid(body.type) : body.duration === 0 ? catalog.milestoneType._id : catalog.defaultType._id,
+    status: catalog.defaultStatus._id,
+  });
+  apply(task);
 
   const result = await mutatePlan(project, req.user!, (tasks) => {
-    let parent: Types.ObjectId | null = null;
-    let order = tasks.filter((t) => !t.parent).length;
     if (body.afterTaskId) {
       const after = findTask(tasks, body.afterTaskId);
-      parent = after.parent;
-      order = after.order + 0.5;
+      task.parent = after.parent;
+      task.order = after.order + 0.5;
     }
-    tasks.push({
-      _id: newId,
-      project: project._id,
-      parent,
-      order,
-      name: body.name,
-      duration: body.duration,
-      constraintStart: body.constraintStart ?? null,
-      percentComplete: 0,
-      predecessors: [],
-      resources: [],
-      notes: '',
-      baselineStart: null,
-      baselineFinish: null,
-      start: '',
-      finish: '',
-      isSummary: false,
-      isMilestone: false,
-      isCritical: false,
-      totalSlack: 0,
-      wbs: '',
-      outlineLevel: 0,
-      rowNumber: 0,
-      createdBy: req.user!._id,
-      updatedBy: req.user!._id,
-    });
+    tasks.push(task);
   });
-  res.status(201).json({ ...result, createdTaskId: newId.toString() });
+  res.status(201).json({ ...result, createdTaskId: task._id.toString() });
 });
 
 tasksRouter.patch('/:taskId', loadProject('member'), async (req, res) => {
   const body = parseBody(updateSchema, req.body);
   const project = req.project!;
+  const apply = await prepareAttributes(project, body, await getCatalog());
 
   if (body.resources?.length) {
     const count = await Resource.countDocuments({ project: project._id, _id: { $in: body.resources } });
@@ -107,44 +197,130 @@ tasksRouter.patch('/:taskId', loadProject('member'), async (req, res) => {
   res.json(
     await mutatePlan(project, req.user!, (tasks) => {
       const task = findTask(tasks, String(req.params.taskId));
+      const ids = new Set(tasks.map((t) => t._id.toString()));
+      const self = task._id.toString();
       if (body.name !== undefined) task.name = body.name;
       if (body.notes !== undefined) task.notes = body.notes;
       if (body.constraintStart !== undefined) task.constraintStart = body.constraintStart;
+      if (body.manual !== undefined) task.manual = body.manual;
+      if (task.manual && !task.constraintStart) task.constraintStart = task.start || project.startDate;
       // Summary duration and % complete are computed from their children.
       if (body.duration !== undefined && !task.isSummary) task.duration = body.duration;
-      if (body.percentComplete !== undefined && !task.isSummary) task.percentComplete = Math.round(body.percentComplete);
-      if (body.resources !== undefined) task.resources = [...new Set(body.resources)].map((id) => new Types.ObjectId(id));
+      if (body.resources !== undefined) task.resources = [...new Set(body.resources)].map(oid);
+      apply(task);
+
       if (body.predecessors !== undefined) {
-        const ids = new Set(tasks.map((t) => t._id.toString()));
         const seen = new Set<string>();
         task.predecessors = [];
         for (const link of body.predecessors) {
           if (!ids.has(link.task)) throw badRequest('A predecessor refers to a task that does not exist');
-          if (link.task === task._id.toString()) throw badRequest('A task cannot be its own predecessor');
+          if (link.task === self) throw badRequest('A task cannot be its own predecessor');
           if (seen.has(link.task)) continue;
           seen.add(link.task);
-          task.predecessors.push({ task: new Types.ObjectId(link.task), type: link.type, lag: link.lag });
+          task.predecessors.push({ task: oid(link.task), type: link.type, lag: link.lag });
+        }
+      }
+      if (body.relations !== undefined) {
+        const seen = new Set<string>();
+        task.relations = [];
+        for (const rel of body.relations) {
+          if (!ids.has(rel.task)) throw badRequest('A related task does not exist in this project');
+          if (rel.task === self) throw badRequest('A task cannot be related to itself');
+          if (seen.has(rel.task)) continue;
+          seen.add(rel.task);
+          task.relations.push({ task: oid(rel.task), type: rel.type });
         }
       }
     }),
   );
 });
 
+tasksRouter.post('/bulk', loadProject('member'), async (req, res) => {
+  const body = parseBody(bulkSchema, req.body);
+  const apply = await prepareAttributes(req.project!, body.patch, await getCatalog());
+  res.json(
+    await mutatePlan(req.project!, req.user!, (tasks) => {
+      const ids = new Set(body.taskIds);
+      for (const t of tasks) if (ids.has(t._id.toString())) apply(t);
+    }),
+  );
+});
+
+tasksRouter.post('/bulk-delete', loadProject('member'), async (req, res) => {
+  const { taskIds } = parseBody(z.object({ taskIds: idsSchema }), req.body);
+  res.json(
+    await mutatePlan(req.project!, req.user!, (tasks) => {
+      const doomed = withDescendants(tasks, taskIds);
+      return tasks.filter((t) => !doomed.has(t._id.toString()));
+    }),
+  );
+});
+
+/** Copies or moves tasks (with their sub-tasks) to this or another project. */
+tasksRouter.post('/transfer', loadProject('member'), async (req, res) => {
+  const body = parseBody(transferSchema, req.body);
+  const source = req.project!;
+  const sameProject = body.targetProjectId === source._id.toString();
+  if (sameProject && body.mode === 'move') throw badRequest('Tasks are already in this project');
+
+  const target = sameProject ? source : await Project.findById(assertObjectId(body.targetProjectId, 'Project'));
+  if (!target) throw notFound('Target project');
+  const targetRole = roleFor(target, req.user!);
+  if (!targetRole) throw notFound('Target project');
+  if (ROLE_RANK[targetRole] < ROLE_RANK.member) throw forbidden('You need the member role on the target project');
+
+  const sourceTasks = await loadTasks(source._id);
+  for (const id of body.taskIds) findTask(sourceTasks, id);
+  const selected = withDescendants(sourceTasks, body.taskIds);
+  const picked = sourceTasks.filter((t) => selected.has(t._id.toString())).sort((a, b) => a.rowNumber - b.rowNumber);
+
+  const idMap = new Map(picked.map((t) => [t._id.toString(), new Types.ObjectId()]));
+  const remap = (id: Types.ObjectId | null) => (id ? idMap.get(id.toString()) ?? null : null);
+  const keepPerson = (id: Types.ObjectId | null) => (id && (sameProject || isProjectPerson(target, id.toString())) ? id : null);
+
+  const copies = picked.map((t, i) => {
+    const isRoot = !t.parent || !selected.has(t.parent.toString());
+    return newTask(target, req.user!._id, {
+      ...t,
+      _id: idMap.get(t._id.toString())!,
+      project: target._id,
+      parent: remap(t.parent),
+      order: isRoot ? Number.MAX_SAFE_INTEGER - picked.length + i : t.order,
+      name: sameProject && isRoot ? `${t.name} (copy)` : t.name,
+      number: null,
+      predecessors: t.predecessors.filter((l) => idMap.has(l.task.toString())).map((l) => ({ ...l, task: remap(l.task)! })),
+      relations: (t.relations ?? []).filter((r) => idMap.has(r.task.toString())).map((r) => ({ ...r, task: remap(r.task)! })),
+      resources: sameProject ? t.resources : [],
+      category: sameProject ? t.category : null,
+      assignee: keepPerson(t.assignee),
+      accountable: keepPerson(t.accountable),
+      watchers: [],
+      baselineStart: sameProject ? t.baselineStart : null,
+      baselineFinish: sameProject ? t.baselineFinish : null,
+      createdAt: undefined,
+      updatedAt: undefined,
+      createdBy: req.user!._id,
+    });
+  });
+
+  const targetPlan = await mutatePlan(target, req.user!, (tasks) => {
+    tasks.push(...copies);
+  });
+  const sourcePlan =
+    body.mode === 'move'
+      ? await mutatePlan(source, req.user!, (tasks) => tasks.filter((t) => !selected.has(t._id.toString())))
+      : sameProject
+        ? targetPlan
+        : { project: await serializeProject(source, req.user!), tasks: await loadTasks(source._id) };
+
+  res.json({ ...sourcePlan, transferred: copies.length });
+});
+
 tasksRouter.delete('/:taskId', loadProject('member'), async (req, res) => {
   res.json(
     await mutatePlan(req.project!, req.user!, (tasks) => {
-      const root = findTask(tasks, String(req.params.taskId));
-      const doomed = new Set([root._id.toString()]);
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const t of tasks) {
-          if (t.parent && doomed.has(t.parent.toString()) && !doomed.has(t._id.toString())) {
-            doomed.add(t._id.toString());
-            grew = true;
-          }
-        }
-      }
+      findTask(tasks, String(req.params.taskId));
+      const doomed = withDescendants(tasks, [String(req.params.taskId)]);
       return tasks.filter((t) => !doomed.has(t._id.toString()));
     }),
   );

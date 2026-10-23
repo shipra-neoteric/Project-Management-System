@@ -2,7 +2,7 @@
 
 An in-house, MS Project–style planning tool for Neoteric Properties, built from scratch and styled as a Nexora module.
 
-**Features:** Gantt chart with an MS Project–style task grid · auto-scheduling with FS/SS/FF/SF dependencies and lag · working calendar with holidays · summary tasks and outline (indent/outdent) · milestones · critical path · baselines and slippage · resources and workload · team sharing with Owner/Manager/Member/Viewer roles · dashboard · Excel and PDF export · light and dark mode · mobile-friendly.
+**Features:** Gantt, Table, Kanban board and Calendar views with filters, grouping and saved views · drag-and-drop scheduling · readable task IDs (OF-12) · types, statuses, priorities, assignees, categories · bulk edit, copy & move between projects · global search (Ctrl+K) · graphical Gantt PDF · Gantt chart with an MS Project–style task grid · auto-scheduling with FS/SS/FF/SF dependencies and lag · working calendar with holidays · summary tasks and outline (indent/outdent) · milestones · critical path · baselines and slippage · resources and workload · team sharing with Owner/Manager/Member/Viewer roles · dashboard · Excel and PDF export · light and dark mode · mobile-friendly.
 
 | Part | Tech | Hosting (free tier) |
 |---|---|---|
@@ -55,6 +55,6 @@ The same command works against the live API (`https://<your-api>.onrender.com/ap
 ## Quality checks
 
 ```bash
-cd backend  && npm run typecheck && npm test     # 20 tests: scheduler + API
+cd backend  && npm run typecheck && npm test     # 29 tests: scheduler, API, Phase 2 features
 cd frontend && npm run typecheck && npm run build
 ```

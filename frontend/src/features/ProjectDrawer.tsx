@@ -24,6 +24,7 @@ const schema = z.object({
   description: z.string().max(2000),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a start date'),
   status: z.enum(['active', 'on_hold', 'completed', 'archived']),
+  key: z.string().trim().toUpperCase().regex(/^([A-Z][A-Z0-9]{1,9})?$/, '2–10 letters/digits, starting with a letter'),
 });
 type Values = z.infer<typeof schema>;
 
@@ -45,18 +46,20 @@ export function ProjectDrawer({ open, onClose, project }: { open: boolean; onClo
       description: project?.description ?? '',
       startDate: project?.startDate ?? todayISO(),
       status: project?.status ?? 'active',
+      key: project?.key ?? '',
     });
   }, [open, project, reset]);
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
     try {
+      const { key, ...rest } = values;
       if (project) {
-        await update.mutateAsync(values);
+        await update.mutateAsync({ ...rest, ...(key ? { key } : {}) });
         void toastSuccess('Project updated');
         onClose();
       } else {
-        const created = await create.mutateAsync(values);
+        const created = await create.mutateAsync(rest);
         void toastSuccess('Project created');
         onClose();
         router.push(`/projects/${created._id}`);
@@ -95,6 +98,11 @@ export function ProjectDrawer({ open, onClose, project }: { open: boolean; onClo
           <Field label="Start date" htmlFor="p-start" required error={errors.startDate?.message} hint="Nothing is scheduled before this date">
             <input id="p-start" type="date" className={inputCls} {...register('startDate')} />
           </Field>
+          {project && (
+            <Field label="Project key" htmlFor="p-key" error={errors.key?.message} hint={`Task IDs look like ${project.key || 'KEY'}-12`}>
+              <input id="p-key" className={cn(inputCls, 'uppercase font-mono', errors.key && 'border-red-400')} maxLength={10} {...register('key')} />
+            </Field>
+          )}
           <Field label="Status" htmlFor="p-status">
             <Controller
               control={control}

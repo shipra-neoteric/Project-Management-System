@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Flag,
+  GanttChartSquare,
   IndentDecrease,
   IndentIncrease,
   Loader2,
@@ -21,19 +22,23 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Button, IconButton } from '@/components/ui/Button';
 import { Alert, EmptyState, PageLoader } from '@/components/ui/Feedback';
 import { FilterTabs } from '@/components/ui/Layout';
-import { keys, usePlan, useResources, useTaskMutations, type TaskPatch } from '@/features/queries';
+import { BulkBar } from '@/components/views/BulkBar';
+import { useViewState } from '@/components/views/useViewState';
+import { ViewToolbar } from '@/components/views/ViewToolbar';
+import { useWorkspace } from '@/features/project-context';
+import { keys, useTaskMutations, type TaskPatch } from '@/features/queries';
 import { confirmDanger, toastError } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { todayISO } from '@/lib/dates';
-import { exportCsv, exportPdf } from '@/lib/export';
-import { atLeast } from '@/lib/status';
+import { addDays } from '@/lib/dates';
+import { exportCsv, exportGanttPdf, exportPdf } from '@/lib/export';
+import { filterHierarchy } from '@/lib/query';
 import { useTheme } from '@/lib/theme';
 import type { Task } from '@/lib/types';
+import { nextWorkingDay, workingDaysBetween } from '@/lib/workcal';
 import { GanttChart, HEADER_H, ROW_H, type Zoom } from './GanttChart';
 import { parsePredecessors } from './predecessors';
 import { GRID_DEFAULT_WIDTH, GRID_FULL_WIDTH, TaskGrid, type EditableField } from './TaskGrid';
-import { TaskDrawer } from './TaskDrawer';
 
 const MIN_GRID = 180;
 
@@ -61,16 +66,16 @@ function usePersistentState<T>(key: string, initial: T) {
   return [value, update] as const;
 }
 
-export function GanttView({ projectId }: { projectId: string }) {
-  const plan = usePlan(projectId);
-  const resourcesQuery = useResources(projectId);
+export function GanttView() {
+  const { projectId, plan, tasks, byId, resources, ctx, canEdit, isLoading, error, refetch, openTask } = useWorkspace();
   const mutations = useTaskMutations(projectId);
   const saving = useIsMutating({ mutationKey: keys.plan(projectId) }) > 0;
   const { themeColor, isDark } = useTheme();
-  const today = todayISO();
+  const viewState = useViewState(projectId, 'gantt');
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const lastChecked = useRef<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editRequest, setEditRequest] = useState<{ taskId: string; field: EditableField; nonce: number } | null>(null);
   const [zoom, setZoom] = usePersistentState<Zoom>('pms_gantt_zoom', 'day');
@@ -88,26 +93,34 @@ export function GanttView({ projectId }: { projectId: string }) {
     ro.observe(el);
     setViewport(el.clientWidth);
     return () => ro.disconnect();
-  }, [plan.isSuccess]);
+  }, [plan, tasks.length]);
 
-  const project = plan.data?.project;
-  const tasks = useMemo(() => plan.data?.tasks ?? [], [plan.data?.tasks]);
-  const byId = useMemo(() => new Map(tasks.map((t) => [t._id, t])), [tasks]);
-  const resources = useMemo(() => resourcesQuery.data ?? [], [resourcesQuery.data]);
+  const project = plan?.project;
   const resourceNames = useMemo(() => new Map(resources.map((r) => [r._id, r.name])), [resources]);
-  const canEdit = atLeast(project?.myRole, 'member');
 
-  // Hide children of collapsed summaries.
-  const rows = useMemo(() => {
+  // Filter (keeping ancestors for context), then hide children of collapsed summaries.
+  const { rows, matched } = useMemo(() => {
+    if (!ctx) return { rows: tasks, matched: undefined };
+    const filtered = filterHierarchy(tasks, viewState.config, ctx);
     const hidden = new Set<string>();
-    return tasks.filter((t) => {
+    const visible = filtered.rows.filter((t) => {
       if (t.parent && (hidden.has(t.parent) || collapsed.has(t.parent))) {
         hidden.add(t._id);
         return false;
       }
       return true;
     });
-  }, [tasks, collapsed]);
+    const isFiltered = filtered.matched.size !== tasks.length;
+    return { rows: visible, matched: isFiltered ? filtered.matched : undefined };
+  }, [tasks, ctx, viewState.config, collapsed]);
+
+  // Drop selections of tasks that no longer exist.
+  useEffect(() => {
+    setChecked((prev) => {
+      const next = new Set([...prev].filter((id) => byId.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [byId]);
 
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
   const defaultGrid = viewport < 768 ? 230 : Math.min(GRID_DEFAULT_WIDTH, Math.round(viewport * 0.55));
@@ -130,17 +143,13 @@ export function GanttView({ projectId }: { projectId: string }) {
 
   const move = (action: 'up' | 'down' | 'indent' | 'outdent') => selected && run(() => mutations.move.mutateAsync({ taskId: selected._id, action }));
 
-  const deleteTask = useCallback(
-    async (task: Task) => {
-      const children = tasks.filter((t) => t.wbs.startsWith(`${task.wbs}.`)).length;
-      const ok = await confirmDanger(`Delete "${task.name}"?`, children ? `Its ${children} sub-task${children === 1 ? '' : 's'} will be deleted too.` : 'Links to this task will be removed.');
-      if (!ok) return;
-      await run(() => mutations.remove.mutateAsync(task._id));
-      setDrawerId(null);
-      setSelectedId(null);
-    },
-    [tasks, mutations.remove, run],
-  );
+  const deleteTask = async (task: Task) => {
+    const children = tasks.filter((t) => t.wbs.startsWith(`${task.wbs}.`)).length;
+    const ok = await confirmDanger(`Delete "${task.name}"?`, children ? `Its ${children} sub-task${children === 1 ? '' : 's'} will be deleted too.` : 'Links to this task will be removed.');
+    if (!ok) return;
+    await run(() => mutations.remove.mutateAsync(task._id));
+    setSelectedId(null);
+  };
 
   const onCommit = useCallback(
     (task: Task, field: EditableField, value: string) => {
@@ -179,6 +188,22 @@ export function GanttView({ projectId }: { projectId: string }) {
     [tasks, mutations.update, run],
   );
 
+  /** Dragging a bar sets its start (Start-No-Earlier-Than, or the fixed date when manual); dragging its end sets the duration. */
+  const onBarDrag = useCallback(
+    (task: Task, mode: 'move' | 'resize', days: number) => {
+      if (!project) return;
+      if (mode === 'move') {
+        const start = nextWorkingDay(project, addDays(task.start, days));
+        void run(() => mutations.update.mutateAsync({ taskId: task._id, patch: { constraintStart: start } }));
+      } else {
+        const finish = addDays(task.finish, days);
+        const duration = Math.max(1, workingDaysBetween(project, task.start, finish));
+        if (duration !== task.duration) void run(() => mutations.update.mutateAsync({ taskId: task._id, patch: { duration } }));
+      }
+    },
+    [project, mutations.update, run],
+  );
+
   const toggle = useCallback((id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -188,7 +213,32 @@ export function GanttView({ projectId }: { projectId: string }) {
     });
   }, []);
 
-  // Drag the splitter between grid and chart.
+  const onCheck = useCallback(
+    (id: string, range: boolean) => {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        const anchor = lastChecked.current;
+        if (range && anchor) {
+          const a = rows.findIndex((t) => t._id === anchor);
+          const b = rows.findIndex((t) => t._id === id);
+          if (a >= 0 && b >= 0) {
+            for (const t of rows.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(t._id);
+            return next;
+          }
+        }
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        lastChecked.current = id;
+        return next;
+      });
+    },
+    [rows],
+  );
+
+  const onCheckAll = useCallback(() => {
+    setChecked((prev) => (rows.every((t) => prev.has(t._id)) ? new Set() : new Set(rows.map((t) => t._id))));
+  }, [rows]);
+
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -208,12 +258,14 @@ export function GanttView({ projectId }: { projectId: string }) {
     if (el && line) el.scrollLeft = Math.max(0, Number(line.getAttribute('x1')) - 120);
   };
 
-  if (plan.isLoading) return <PageLoader label="Loading plan…" />;
-  if (plan.error || !project) return <Alert>{errorMessage(plan.error, 'Could not load the plan')}</Alert>;
+  if (isLoading) return <PageLoader label="Loading plan…" />;
+  if (error || !project || !ctx) return <Alert>{errorMessage(error, 'Could not load the plan')}</Alert>;
 
   return (
     <div className="space-y-3">
-      {/* Toolbar */}
+      <ViewToolbar kind="gantt" state={viewState} />
+
+      {/* Action toolbar */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow px-3 py-2 flex flex-wrap items-center gap-2 no-print">
         {canEdit && (
           <>
@@ -250,32 +302,27 @@ export function GanttView({ projectId }: { projectId: string }) {
           disabled={!project.baselineSavedAt}
           onClick={() => setShowBaseline(!showBaseline)}
         />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           {saving ? (
             <span className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" /> Saving…
             </span>
           ) : (
-            <IconButton icon={RefreshCw} label="Refresh" onClick={() => plan.refetch()} />
+            <IconButton icon={RefreshCw} label="Refresh" onClick={refetch} />
           )}
-          <button
-            type="button"
-            onClick={() => exportCsv(project, tasks, resourceNames)}
-            disabled={!tasks.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-800 rounded-md hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors disabled:opacity-40"
-          >
-            <Download className="w-4 h-4" /> Excel
-          </button>
-          <button
-            type="button"
-            onClick={() => run(() => exportPdf(project, tasks, resourceNames))}
-            disabled={!tasks.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-800 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors disabled:opacity-40"
-          >
-            <FileText className="w-4 h-4" /> PDF
-          </button>
+          <ExportButton tone="green" icon={Download} label="Excel" disabled={!rows.length} onClick={() => exportCsv(project, rows, resourceNames)} />
+          <ExportButton tone="red" icon={FileText} label="PDF" disabled={!rows.length} onClick={() => run(() => exportPdf(project, rows, resourceNames))} />
+          <ExportButton
+            tone="red"
+            icon={GanttChartSquare}
+            label="Gantt PDF"
+            disabled={!rows.length}
+            onClick={() => run(() => exportGanttPdf(project, rows, { showCritical, showBaseline: showBaseline && !!project.baselineSavedAt }))}
+          />
         </div>
       </div>
+
+      <BulkBar selected={[...checked]} onClear={() => setChecked(new Set())} />
 
       {/* Grid + timeline */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
@@ -292,13 +339,12 @@ export function GanttView({ projectId }: { projectId: string }) {
               )
             }
           />
+        ) : rows.length === 0 ? (
+          <EmptyState icon={BarChart3} title="No tasks match the current filters" message="Adjust or clear the filters in View options." />
         ) : (
-          <div ref={scrollRef} className="relative overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 320 }}>
+          <div ref={scrollRef} className="relative overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: 320 }}>
             <div className="flex w-max min-w-full">
-              <div
-                className="sticky left-0 z-20 bg-white dark:bg-gray-800 overflow-hidden shrink-0 border-r border-gray-200 dark:border-gray-700"
-                style={{ width: effectiveGrid }}
-              >
+              <div className="sticky left-0 z-20 bg-white dark:bg-gray-800 overflow-hidden shrink-0 border-r border-gray-200 dark:border-gray-700" style={{ width: effectiveGrid }}>
                 <TaskGrid
                   rows={rows}
                   byId={byId}
@@ -306,12 +352,17 @@ export function GanttView({ projectId }: { projectId: string }) {
                   selectedId={selectedId}
                   collapsed={collapsed}
                   canEdit={canEdit}
-                  today={today}
+                  today={ctx.today}
                   editRequest={editRequest}
                   onSelect={setSelectedId}
-                  onOpen={setDrawerId}
+                  onOpen={openTask}
                   onToggle={toggle}
                   onCommit={onCommit}
+                  ctx={ctx}
+                  checked={checked}
+                  onCheck={onCheck}
+                  onCheckAll={onCheckAll}
+                  matched={matched}
                 />
                 <div
                   onPointerDown={startResize}
@@ -322,45 +373,51 @@ export function GanttView({ projectId }: { projectId: string }) {
                   aria-orientation="vertical"
                 />
               </div>
-              <div className="relative">
-                <GanttChart
-                  project={project}
-                  rows={rows}
-                  byId={byId}
-                  resourceNames={resourceNames}
-                  zoom={zoom}
-                  showCritical={showCritical}
-                  showBaseline={showBaseline && !!project.baselineSavedAt}
-                  selectedId={selectedId}
-                  minWidth={Math.max(0, viewport - effectiveGrid)}
-                  themeColor={themeColor}
-                  isDark={isDark}
-                  onSelect={setSelectedId}
-                  onOpen={setDrawerId}
-                />
-              </div>
+              <GanttChart
+                project={project}
+                rows={rows}
+                byId={byId}
+                resourceNames={resourceNames}
+                zoom={zoom}
+                showCritical={showCritical}
+                showBaseline={showBaseline && !!project.baselineSavedAt}
+                selectedId={selectedId}
+                minWidth={Math.max(0, viewport - effectiveGrid)}
+                themeColor={themeColor}
+                isDark={isDark}
+                matched={matched}
+                canEdit={canEdit}
+                onSelect={setSelectedId}
+                onOpen={openTask}
+                onBarDrag={onBarDrag}
+              />
             </div>
           </div>
         )}
       </div>
 
       <p className={cn('text-xs text-gray-400 dark:text-gray-500 no-print', !canEdit && 'hidden')}>
-        Tip: click a row to select it, click a cell again to edit it. Predecessors use row numbers, e.g. <code>3</code>, <code>5SS+2</code>, <code>7FF-1</code>. Double-click a row
-        for all details. Drag the divider to show more columns.
+        Tip: drag a bar to move it, drag its right edge to change the duration. Tick rows for bulk actions (Shift-click selects a range). Predecessors use row numbers, e.g. <code>3</code>,{' '}
+        <code>5SS+2</code>. Double-click a row for all details.
       </p>
-
-      <TaskDrawer
-        task={drawerId ? byId.get(drawerId) ?? null : null}
-        tasks={tasks}
-        resources={resources}
-        canEdit={canEdit}
-        today={today}
-        onClose={() => setDrawerId(null)}
-        onSave={async (taskId, patch) => {
-          await mutations.update.mutateAsync({ taskId, patch });
-        }}
-        onDelete={deleteTask}
-      />
     </div>
+  );
+}
+
+function ExportButton({ tone, icon: Icon, label, disabled, onClick }: { tone: 'green' | 'red'; icon: typeof Download; label: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-md transition-colors disabled:opacity-40',
+        tone === 'green'
+          ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-100 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30'
+          : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-100 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30',
+      )}
+    >
+      <Icon className="w-4 h-4" /> {label}
+    </button>
   );
 }

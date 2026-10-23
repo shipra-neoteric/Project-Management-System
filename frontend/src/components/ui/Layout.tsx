@@ -152,7 +152,7 @@ export const rowCls = 'hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-col
 
 export function SearchInput({ value, onChange, placeholder = 'Search…' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
-    <div className="relative w-full sm:w-72">
+    <div className="relative w-full sm:w-64 shrink-0">
       <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
         <circle cx="11" cy="11" r="8" />
         <path d="m21 21-4.3-4.3" />

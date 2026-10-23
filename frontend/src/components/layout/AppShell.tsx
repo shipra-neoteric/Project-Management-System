@@ -6,6 +6,7 @@ import {
   ChevronsRight,
   FolderKanban,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Menu,
   Moon,
@@ -19,6 +20,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PageLoader } from '@/components/ui/Feedback';
+import { GlobalSearch } from './GlobalSearch';
 import { useOrgSettings } from '@/features/queries';
 import { SLOW_EVENT } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -44,6 +46,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Admin',
     items: [
       { href: '/users', label: 'Users', icon: Users, adminOnly: true },
+      { href: '/work-settings', label: 'Types & statuses', icon: ListChecks, adminOnly: true },
       { href: '/settings', label: 'Organisation', icon: Settings, adminOnly: true },
     ],
   },
@@ -225,11 +228,12 @@ function Header({ onMenu, orgName }: { onMenu: () => void; orgName: string }) {
             <Menu className="w-5 h-5" />
           </button>
           <span className="lg:hidden text-sm font-semibold text-gray-900 dark:text-white truncate">{orgName}</span>
-          <span className="hidden lg:block text-sm text-gray-500 dark:text-gray-400">
+          <span className="hidden xl:block text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
             {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <GlobalSearch />
           <button
             onClick={toggleTheme}
             className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

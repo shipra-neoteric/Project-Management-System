@@ -1,5 +1,7 @@
 # 08 — Feature Gap Analysis & Roadmap
 
+_Updated after Phase 2. Phase 1 is partly done: its data foundation (types, statuses, assignee, accountable, priority, category) was built because Phase 2 needs it. Comments, attachments, notifications, email and password reset are parked on the `phase-1-wip` branch._
+
 Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 dev) and our **Project Management System (PMS) v1**. The inventory comes from scanning OpenProject's 31 feature modules, ~150 permissions, ~170 data models and ~45 API endpoint groups, grouped into user-facing features.
 
 ## 1. Where we stand
@@ -7,10 +9,10 @@ Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 d
 | | Count |
 |---|---|
 | Features inventoried | **100** |
-| ✅ Done in PMS | **19** |
-| 🟡 Partially done | **11** |
-| ❌ Missing | **70** |
-| **Coverage today** (partial counts as half) | **24%** |
+| ✅ Done in PMS | **32** |
+| 🟡 Partially done | **10** |
+| ❌ Missing | **58** |
+| **Coverage today** (partial counts as half) | **37%** |
 
 **Where PMS is already ahead of OpenProject:** OpenProject schedules only with Finish-to-Start ("precedes/follows") links and has no critical path. PMS supports all four MS Project link types (FS/SS/FF/SF) and calculates the critical path and total slack, so for *scheduling* it is closer to MS Project than OpenProject is.
 
@@ -20,17 +22,17 @@ Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 d
 
 Phases are ordered by **leverage**: each one lays a foundation that later phases reuse, so every phase unlocks more than the one before it. For example, Phase 1's comments, history and notifications are reused by meetings, reminders and sharing in Phase 6; Phase 2's query engine powers boards, calendars, reports, the team planner and portfolio lists.
 
-| Phase | Theme | Features | Coverage after phase | Rough effort* |
+| Phase | Theme | Progress | Coverage after phase | Rough effort* |
 |---|---|---|---|---|
-| Now | PMS v1 | — | **24%** | done |
-| 1 | Real team task management | 11 | **35%** | 3-4 weeks |
-| 2 | Views, filters & interactive planning | 11 | **46%** | 4-6 weeks |
-| 3 | Projects & portfolio | 14 | **58%** | 4-5 weeks |
-| 4 | Time, cost & budgets | 7 | **64%** | 3-4 weeks |
-| 5 | Resources & permissions | 9 | **73%** | 4-5 weeks |
-| 6 | Agile & collaboration | 11 | **84%** | 6-8 weeks |
-| 7 | Enterprise security & platform | 11 | **93%** | 5-7 weeks |
-| 8 | Integrations & intelligence | 7 | **100%** | 6-10 weeks |
+| Now | Current PMS | — | **37%** | — |
+| 1 | Real team task management | 🟡 2/11 done | **46%** | 3-4 weeks |
+| 2 | Views, filters & interactive planning | ✅ Complete | **46%** | done |
+| 3 | Projects & portfolio | Planned | **58%** | 4-5 weeks |
+| 4 | Time, cost & budgets | Planned | **64%** | 3-4 weeks |
+| 5 | Resources & permissions | Planned | **73%** | 4-5 weeks |
+| 6 | Agile & collaboration | Planned | **84%** | 6-8 weeks |
+| 7 | Enterprise security & platform | Planned | **93%** | 5-7 weeks |
+| 8 | Integrations & intelligence | Planned | **100%** | 6-10 weeks |
 
 \* One developer working with an AI coding assistant, including tests. Treat as order of magnitude, not a commitment.
 
@@ -38,13 +40,13 @@ Phases are ordered by **leverage**: each one lays a foundation that later phases
 
 ### Phase 1 — Real team task management
 
-Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **35%**.
+Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **46%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
-| Task types (Task, Bug, Feature, Epic, Phase...) | Work packages | ❌ Missing | `type, types` |
-| Statuses & role-based workflows | Work packages | ❌ Missing | `status, workflow` |
-| Assignee, accountable, priority, category | Work packages | 🟡 Partial — PMS has resources only | `work_package belongs_to` |
+| Task types (Task, Bug, Feature, Epic, Phase...) | Work packages | ✅ Done | `type, types` |
+| Statuses & role-based workflows | Work packages | 🟡 Partial — Statuses done; role-based workflows pending | `status, workflow` |
+| Assignee, accountable, priority, category | Work packages | ✅ Done | `work_package belongs_to` |
 | Comments & full change history (journal) | Work packages | ❌ Missing | `journal, journals` |
 | @mentions | Work packages | ❌ Missing | `notification reason: mentioned` |
 | File attachments | Work packages | ❌ Missing | `attachment` |
@@ -60,17 +62,17 @@ One query engine powers table, board, calendar and search; the Gantt becomes dra
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
-| Manual scheduling mode per task | Scheduling & Gantt | ❌ Missing | `schedule_manually` |
-| Drag & resize bars on the Gantt | Scheduling & Gantt | ❌ Missing | `frontend gantt` |
-| Non-scheduling relations (relates, blocks, duplicates, includes, requires) | Scheduling & Gantt | ❌ Missing | `relation.rb` |
-| Graphical Gantt PDF export | Scheduling & Gantt | ❌ Missing | `pdf_export (gantt)` |
-| Bulk edit, copy, move between projects | Work packages | ❌ Missing | `copy/move_work_packages` |
-| Readable IDs (e.g. PROJ-123) | Work packages | ❌ Missing | `semantic_identifier` |
-| Task table view | Views & reporting | 🟡 Partial — PMS grid exists, no saved views | `work_packages_table` |
-| Saved views: filters, sorting, grouping, columns | Views & reporting | ❌ Missing | `query, persisted_query` |
-| Kanban boards (status, assignee, version, subproject) | Views & reporting | ❌ Missing | `modules/boards` |
-| Calendar view | Views & reporting | ❌ Missing | `modules/calendar` |
-| Global search | Views & reporting | ❌ Missing | `search_project` |
+| Manual scheduling mode per task | Scheduling & Gantt | ✅ Done | `schedule_manually` |
+| Drag & resize bars on the Gantt | Scheduling & Gantt | ✅ Done | `frontend gantt` |
+| Non-scheduling relations (relates, blocks, duplicates, includes, requires) | Scheduling & Gantt | ✅ Done | `relation.rb` |
+| Graphical Gantt PDF export | Scheduling & Gantt | ✅ Done | `pdf_export (gantt)` |
+| Bulk edit, copy, move between projects | Work packages | ✅ Done | `copy/move_work_packages` |
+| Readable IDs (e.g. PROJ-123) | Work packages | ✅ Done | `semantic_identifier` |
+| Task table view | Views & reporting | ✅ Done | `work_packages_table` |
+| Saved views: filters, sorting, grouping, columns | Views & reporting | ✅ Done | `query, persisted_query` |
+| Kanban boards (status, assignee, version, subproject) | Views & reporting | ✅ Done | `modules/boards` |
+| Calendar view | Views & reporting | ✅ Done | `modules/calendar` |
+| Global search | Views & reporting | ✅ Done | `search_project` |
 
 ### Phase 3 — Projects & portfolio
 
@@ -188,10 +190,10 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Auto-scheduling across the whole plan | ✅ Done | — |  | `work_packages/schedule services` |
 | Working days & holidays | ✅ Done | — | PMS: per project; OP: global | `non_working_day, week_day` |
 | Baseline snapshot & slippage | 🟡 Partial | 3 | OP compares against any past date | `timestamps / baseline compare` |
-| Manual scheduling mode per task | ❌ Missing | 2 |  | `schedule_manually` |
-| Drag & resize bars on the Gantt | ❌ Missing | 2 |  | `frontend gantt` |
-| Non-scheduling relations (relates, blocks, duplicates, includes, requires) | ❌ Missing | 2 |  | `relation.rb` |
-| Graphical Gantt PDF export | ❌ Missing | 2 |  | `pdf_export (gantt)` |
+| Manual scheduling mode per task | ✅ Done | 2 |  | `schedule_manually` |
+| Drag & resize bars on the Gantt | ✅ Done | 2 |  | `frontend gantt` |
+| Non-scheduling relations (relates, blocks, duplicates, includes, requires) | ✅ Done | 2 |  | `relation.rb` |
+| Graphical Gantt PDF export | ✅ Done | 2 |  | `pdf_export (gantt)` |
 | Work, remaining work & progress modes (work/status based) | ❌ Missing | 4 |  | `progress_tracking settings` |
 
 ### Work packages
@@ -199,17 +201,17 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
 | Task name, duration, dates, % complete, notes | ✅ Done | — |  | `work_package` |
-| Task types (Task, Bug, Feature, Epic, Phase...) | ❌ Missing | 1 |  | `type, types` |
-| Statuses & role-based workflows | ❌ Missing | 1 |  | `status, workflow` |
-| Assignee, accountable, priority, category | 🟡 Partial | 1 | PMS has resources only | `work_package belongs_to` |
+| Task types (Task, Bug, Feature, Epic, Phase...) | ✅ Done | 1 |  | `type, types` |
+| Statuses & role-based workflows | 🟡 Partial | 1 | Statuses done; role-based workflows pending | `status, workflow` |
+| Assignee, accountable, priority, category | ✅ Done | 1 |  | `work_package belongs_to` |
 | Comments & full change history (journal) | ❌ Missing | 1 |  | `journal, journals` |
 | @mentions | ❌ Missing | 1 |  | `notification reason: mentioned` |
 | File attachments | ❌ Missing | 1 |  | `attachment` |
 | Watchers | ❌ Missing | 1 |  | `watcher` |
 | Custom fields on tasks | ❌ Missing | 3 |  | `work_package_custom_field` |
 | Rich-text editor with macros | ❌ Missing | 6 |  | `editor (CKEditor)` |
-| Bulk edit, copy, move between projects | ❌ Missing | 2 |  | `copy/move_work_packages` |
-| Readable IDs (e.g. PROJ-123) | ❌ Missing | 2 |  | `semantic_identifier` |
+| Bulk edit, copy, move between projects | ✅ Done | 2 |  | `copy/move_work_packages` |
+| Readable IDs (e.g. PROJ-123) | ✅ Done | 2 |  | `semantic_identifier` |
 | Emoji reactions & internal comments | ❌ Missing | 6 |  | `emoji_reaction, internal comments` |
 | Share a task with outside people | ❌ Missing | 6 |  | `share_work_packages` |
 | Custom actions & automations | ❌ Missing | 8 |  | `custom_actions, automations` |
@@ -219,12 +221,12 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
-| Task table view | 🟡 Partial | 2 | PMS grid exists, no saved views | `work_packages_table` |
-| Saved views: filters, sorting, grouping, columns | ❌ Missing | 2 |  | `query, persisted_query` |
-| Kanban boards (status, assignee, version, subproject) | ❌ Missing | 2 |  | `modules/boards` |
-| Calendar view | ❌ Missing | 2 |  | `modules/calendar` |
+| Task table view | ✅ Done | 2 |  | `work_packages_table` |
+| Saved views: filters, sorting, grouping, columns | ✅ Done | 2 |  | `query, persisted_query` |
+| Kanban boards (status, assignee, version, subproject) | ✅ Done | 2 |  | `modules/boards` |
+| Calendar view | ✅ Done | 2 |  | `modules/calendar` |
 | Team planner | ❌ Missing | 5 |  | `modules/team_planner` |
-| Global search | ❌ Missing | 2 |  | `search_project` |
+| Global search | ✅ Done | 2 |  | `search_project` |
 | Dashboard | 🟡 Partial | 3 | PMS: fixed dashboard; OP: configurable widgets | `my_page, overviews` |
 | Charts & graph widgets | ❌ Missing | 3 |  | `work_packages_graph` |
 | CSV export | ✅ Done | — |  | `exports/csv` |

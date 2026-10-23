@@ -47,7 +47,7 @@ Content type: JSON. Errors: `{ "error": { "message": string, "code": string, "de
 | GET | `/projects` | — | Projects you own/are a member of (Admin: all). Includes `myRole` |
 | POST | `/projects` | — | `{ name, description?, startDate, status? }` |
 | GET | `/projects/:id` | viewer | Project with populated `owner` and `members.user`, plus `myRole` |
-| PATCH | `/projects/:id` | manager | `{ name?, description?, status?, startDate?, workingDays?, holidays? }` — reschedules if calendar/start changed → `{ project, tasks }` |
+| PATCH | `/projects/:id` | manager | `{ name?, key?, description?, status?, startDate?, workingDays?, holidays?, categories?: [{ _id?, name }] }` — reschedules if calendar/start changed → `{ project, tasks }` |
 | DELETE | `/projects/:id` | owner | Deletes project, tasks, resources |
 | POST | `/projects/:id/baseline` | manager | Copies current start/finish into baseline fields → `{ project, tasks }` |
 | DELETE | `/projects/:id/baseline` | manager | Clears baseline → `{ project, tasks }` |
@@ -65,8 +65,31 @@ All mutations return the full recalculated plan: `{ project, tasks }` (tasks sor
 | PATCH | `/projects/:id/tasks/:taskId` | member | any of `{ name, duration, constraintStart, percentComplete, predecessors, resources, notes }` |
 | DELETE | `/projects/:id/tasks/:taskId` | member | Deletes the task, its subtree, and links pointing at them |
 | POST | `/projects/:id/tasks/:taskId/move` | member | `{ action: 'up' \| 'down' \| 'indent' \| 'outdent' }` |
+| POST | `/projects/:id/tasks/bulk` | member | `{ taskIds, patch: { status?, type?, priority?, assignee?, accountable?, category?, percentComplete? } }` |
+| POST | `/projects/:id/tasks/bulk-delete` | member | `{ taskIds }` (sub-tasks included) |
+| POST | `/projects/:id/tasks/transfer` | member (both projects) | `{ taskIds, targetProjectId, mode: 'copy' \| 'move' }` — copies keep links inside the selection; returns the source plan |
+
+Task create/update also accept `type`, `status`, `priority`, `assignee`, `accountable`, `category`; update accepts `manual` and `relations: [{ task, type }]`.
 
 `predecessors` = `[{ task: "<taskId>", type: "FS"|"SS"|"FF"|"SF", lag: number }]`.
+
+## Saved views
+| Method | Path | Min role | Body |
+|---|---|---|---|
+| GET | `/projects/:id/views` | viewer | Public views + your private ones |
+| POST | `/projects/:id/views` | viewer (`isPublic: true` needs manager) | `{ name, kind, isPublic, config }` |
+| PATCH | `/projects/:id/views/:viewId` | creator or manager | any of the above |
+| DELETE | `/projects/:id/views/:viewId` | creator or manager | |
+
+## Types, statuses, priorities
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/work-settings` | any user | `{ types, statuses, priorities }` |
+| POST / PATCH / DELETE | `/work-settings/types[/:id]` | Admin | `{ name, color, position?, isDefault?, isMilestone? }`; delete refused if in use |
+| POST / PATCH / DELETE | `/work-settings/statuses[/:id]` | Admin | `{ name, color, position?, isDefault?, isClosed? }`; delete refused if in use |
+
+## Search
+`GET /search?q=…` (min 2 chars) → `{ projects: [...], tasks: [{ ..., projectName, projectKey }] }` across accessible projects. Matches names, notes, project keys and IDs like `OF-12`.
 
 ## Resources
 | Method | Path | Min role | Body |

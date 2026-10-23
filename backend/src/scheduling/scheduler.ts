@@ -18,6 +18,8 @@ export interface SchedTaskInput {
   constraintStart: string | null;
   percentComplete: number;
   predecessors: SchedLink[];
+  /** Manually scheduled tasks start exactly on `constraintStart`, ignoring links and summaries. */
+  manual?: boolean;
 }
 
 export interface SchedProjectInput {
@@ -196,7 +198,7 @@ export function schedule(project: SchedProjectInput, tasks: SchedTaskInput[]): S
       floor.set(id, Math.max(parentFloor(id), constraintIndex(t), linkFloor(t, 0)));
     } else if (node.startsWith('l:')) {
       const d = dur.get(id)!;
-      const s = Math.max(parentFloor(id), constraintIndex(t), linkFloor(t, d));
+      const s = t.manual && t.constraintStart ? cal.indexOf(t.constraintStart) : Math.max(parentFloor(id), constraintIndex(t), linkFloor(t, d));
       start.set(id, s);
       end.set(id, s + d);
     } else {

@@ -141,6 +141,16 @@ describe('schedule', () => {
     ).toThrow(/summary task/);
   });
 
+  it('keeps manually scheduled tasks on their date, ignoring links', () => {
+    const out = schedule(project, [
+      task({ id: 'a', duration: 5 }),
+      task({ id: 'm', duration: 2, manual: true, constraintStart: '2026-11-03', predecessors: [{ task: 'a', type: 'FS', lag: 0 }] }),
+      task({ id: 'auto', duration: 1, constraintStart: '2026-11-03', predecessors: [{ task: 'a', type: 'FS', lag: 0 }] }),
+    ]);
+    expect(out.results.get('m')!.start).toBe('2026-11-03');
+    expect(out.results.get('auto')!.start).toBe('2026-11-09');
+  });
+
   it('handles an empty plan', () => {
     const out = schedule(project, []);
     expect(out.finishDate).toBe('2026-11-02');

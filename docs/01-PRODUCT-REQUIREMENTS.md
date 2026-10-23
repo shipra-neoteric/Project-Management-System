@@ -80,6 +80,28 @@ Excel-compatible CSV of the task list, and a PDF report (corporate navy header, 
 
 ---
 
+### W10 — Classify and assign work (Phase 2 foundation)
+Every task has a **type** (Task, Milestone, Phase, Feature, Bug, Risk — admin-configurable), a **status** (New, In progress, On hold, In review, Closed, Rejected — admin-configurable; closed statuses set the task to 100 %), a **priority** (Low, Normal, High, Immediate), an **assignee** and an **accountable** person (project members), and an optional project **category**. Each task gets a readable ID such as `OF-12` built from the project key.
+
+### W11 — Views (Phase 2)
+One shared query engine powers four views of the same plan, each with filters (any field, multiple conditions), quick text/ID search, and **saved views** (private, or shared with the project by managers):
+
+| View | What it adds |
+|---|---|
+| **Gantt** | Filters keep matching tasks plus their summary tasks; drag a bar to move it, drag its end to change the duration; **manual scheduling** pins a task to its date; graphical **Gantt PDF** (A3) |
+| **Table** | Choose columns, sort by header, group by status/type/priority/assignee/category, Excel export of the current view |
+| **Board** | Kanban columns by status (or type, priority, assignee, category); drag cards between columns |
+| **Calendar** | Month grid with task bars coloured by status; milestones as diamonds |
+
+### W12 — Work in bulk (Phase 2)
+Tick tasks in the Gantt or Table (Shift-click for a range) to set status/type/priority/assignee/category, **copy** them (within the project or to another project) or **move** them to another project — sub-tasks and links between the selected tasks come along — or delete them.
+
+### W13 — Find anything (Phase 2)
+Global search in the header (Ctrl/⌘+K) across every project you can access: project names/keys, task names, notes and IDs like `OF-12`. Picking a task opens its details directly.
+
+### W14 — Related tasks (Phase 2)
+Besides scheduling links, tasks can be related without affecting dates: *relates to*, *blocks / blocked by*, *duplicates*, *includes / part of*, *requires*.
+
 ## 3. Out of scope for v1 (possible later phases)
 Cost/budget tracking, timesheets, file attachments, comments/chat, email notifications, MS Project (.mpp/.xml) import, hour-level scheduling, resource leveling, SSO with Nexora, real-time websockets.
 

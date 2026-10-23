@@ -16,6 +16,10 @@ const memberSchema = new Schema(
 const projectSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 120 },
+    /** Short code used in readable task IDs, e.g. "OF" → OF-12. */
+    key: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
+    /** Last task number handed out in this project. */
+    taskSeq: { type: Number, default: 0 },
     description: { type: String, default: '', maxlength: 2000 },
     status: { type: String, enum: PROJECT_STATUSES, default: 'active' },
     startDate: { type: String, required: true },
@@ -24,6 +28,7 @@ const projectSchema = new Schema(
     holidays: { type: [String], default: [] },
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     members: { type: [memberSchema], default: [] },
+    categories: { type: [{ name: { type: String, required: true, trim: true, maxlength: 60 } }], default: [] },
     baselineSavedAt: { type: Date, default: null },
     stats: {
       taskCount: { type: Number, default: 0 },

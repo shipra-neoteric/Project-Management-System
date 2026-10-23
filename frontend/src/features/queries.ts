@@ -2,7 +2,27 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Dashboard, LinkType, MemberRole, OrgSettings, Plan, Project, ProjectStatus, Resource, Task, User } from '@/lib/types';
+import type {
+  Dashboard,
+  LinkType,
+  MemberRole,
+  OrgSettings,
+  Plan,
+  Priority,
+  Project,
+  ProjectStatus,
+  RelationType,
+  Resource,
+  SavedView,
+  SearchResults,
+  Status,
+  Task,
+  TaskType,
+  User,
+  ViewConfig,
+  ViewKind,
+  WorkSettings,
+} from '@/lib/types';
 
 export const keys = {
   projects: ['projects'] as const,
@@ -12,6 +32,9 @@ export const keys = {
   users: ['users'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
+  workSettings: ['work-settings'] as const,
+  views: (id: string) => ['views', id] as const,
+  search: (q: string) => ['search', q] as const,
 };
 
 // ---- Organisation settings & users ---------------------------------------------------------
@@ -88,7 +111,7 @@ export function useUpdateProject(id: string) {
   const store = usePlanCache();
   return useMutation({
     mutationKey: keys.plan(id),
-    mutationFn: (body: Partial<ProjectInput> & { workingDays?: number[]; holidays?: string[] }) =>
+    mutationFn: (body: Partial<ProjectInput> & { key?: string; workingDays?: number[]; holidays?: string[]; categories?: { _id?: string; name: string }[] }) =>
       api<Plan>(`/projects/${id}`, { method: 'PATCH', body }),
     onSuccess: store,
   });
@@ -150,8 +173,21 @@ export function usePlan(id: string) {
   });
 }
 
-export interface TaskPatch {
+/** Attributes that can be set on one task or many at once. */
+export interface TaskAttributes {
+  type?: string;
+  status?: string;
+  priority?: Priority;
+  assignee?: string | null;
+  accountable?: string | null;
+  category?: string | null;
+  percentComplete?: number;
+}
+
+export interface TaskPatch extends TaskAttributes {
   name?: string;
+  manual?: boolean;
+  relations?: { task: string; type: RelationType }[];
   duration?: number;
   constraintStart?: string | null;
   percentComplete?: number;
@@ -162,6 +198,7 @@ export interface TaskPatch {
 
 export function useTaskMutations(projectId: string) {
   const store = usePlanCache();
+  const qc = useQueryClient();
   const base = `/projects/${projectId}/tasks`;
   const opts = { mutationKey: keys.plan(projectId), onSuccess: store };
   return {
@@ -179,6 +216,20 @@ export function useTaskMutations(projectId: string) {
       ...opts,
       mutationFn: ({ taskId, action }: { taskId: string; action: 'up' | 'down' | 'indent' | 'outdent' }) =>
         api<Plan>(`${base}/${taskId}/move`, { method: 'POST', body: { action } }),
+    }),
+    bulk: useMutation({
+      ...opts,
+      mutationFn: ({ taskIds, patch }: { taskIds: string[]; patch: TaskAttributes }) => api<Plan>(`${base}/bulk`, { method: 'POST', body: { taskIds, patch } }),
+    }),
+    bulkDelete: useMutation({ ...opts, mutationFn: (taskIds: string[]) => api<Plan>(`${base}/bulk-delete`, { method: 'POST', body: { taskIds } }) }),
+    transfer: useMutation({
+      ...opts,
+      mutationFn: (body: { taskIds: string[]; targetProjectId: string; mode: 'copy' | 'move' }) =>
+        api<Plan & { transferred: number }>(`${base}/transfer`, { method: 'POST', body }),
+      onSuccess: (plan: Plan, vars) => {
+        store(plan);
+        if (vars.targetProjectId !== projectId) void qc.invalidateQueries({ queryKey: keys.plan(vars.targetProjectId) });
+      },
     }),
   };
 }
@@ -217,3 +268,67 @@ export function useResourceMutations(projectId: string) {
 }
 
 export type { Task };
+
+// ---- Types, statuses, priorities ------------------------------------------------------------
+
+export function useWorkSettings() {
+  return useQuery({ queryKey: keys.workSettings, queryFn: () => api<WorkSettings>('/work-settings'), staleTime: 5 * 60_000 });
+}
+
+export function useWorkSettingsMutations() {
+  const qc = useQueryClient();
+  const onSuccess = (data: WorkSettings) => {
+    qc.setQueryData<WorkSettings>(keys.workSettings, (old) => ({ ...data, priorities: old?.priorities ?? data.priorities }));
+  };
+  type Kind = 'types' | 'statuses';
+  return {
+    create: useMutation({
+      mutationFn: ({ kind, body }: { kind: Kind; body: Partial<TaskType & Status> }) => api<WorkSettings>(`/work-settings/${kind}`, { method: 'POST', body }),
+      onSuccess,
+    }),
+    update: useMutation({
+      mutationFn: ({ kind, id, body }: { kind: Kind; id: string; body: Partial<TaskType & Status> }) =>
+        api<WorkSettings>(`/work-settings/${kind}/${id}`, { method: 'PATCH', body }),
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: ({ kind, id }: { kind: Kind; id: string }) => api<WorkSettings>(`/work-settings/${kind}/${id}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  };
+}
+
+// ---- Saved views & search ----------------------------------------------------------------------
+
+export function useViews(projectId: string) {
+  return useQuery({ queryKey: keys.views(projectId), queryFn: async () => (await api<{ views: SavedView[] }>(`/projects/${projectId}/views`)).views });
+}
+
+export function useViewMutations(projectId: string) {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.views(projectId) });
+  const base = `/projects/${projectId}/views`;
+  return {
+    create: useMutation({
+      mutationFn: async (body: { name: string; kind: ViewKind; isPublic: boolean; config: ViewConfig }) =>
+        (await api<{ view: SavedView }>(base, { method: 'POST', body })).view,
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: async ({ id, ...body }: { id: string; name?: string; isPublic?: boolean; config?: ViewConfig }) =>
+        (await api<{ view: SavedView }>(`${base}/${id}`, { method: 'PATCH', body })).view,
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`${base}/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export function useSearch(q: string) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: keys.search(term),
+    queryFn: () => api<SearchResults>(`/search?q=${encodeURIComponent(term)}`),
+    enabled: term.length >= 2,
+    staleTime: 30_000,
+  });
+}

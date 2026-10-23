@@ -59,6 +59,10 @@ Sidebar collapses to icons on desktop (state saved in `localStorage`) and become
 | `/projects/[id]` (Gantt tab) | Toolbar · split Task grid + Timeline · Task drawer |
 | `/projects/[id]/resources` | Resource table with workload columns · add/edit drawer |
 | `/projects/[id]/settings` | Details form · Working calendar · Members table + add member · Baseline · Danger zone |
+| `/projects/[id]/table` | View toolbar · configurable columns · sortable headers · grouping · selection + bulk bar |
+| `/projects/[id]/board` | Kanban columns (status/type/priority/assignee/category), draggable cards (ID, type, priority, progress, due date, assignee) |
+| `/projects/[id]/calendar` | Month grid, lane-packed task bars coloured by status, prev/next/today |
+| `/work-settings` (Admin) | Task types & statuses: colour, default, milestone/closed flags, order |
 | `/users` (Admin) | User table, role/active toggles |
 | `/settings` (Admin) | Organisation name, brand color picker with live preview |
 
@@ -77,5 +81,10 @@ Sidebar collapses to icons on desktop (state saved in `localStorage`) and become
 * **Zoom:** Day 32 px/day · Week 12 px/day · Month 4 px/day (filter-pill control).
 * **Mobile:** grid shows # + Task name only; other columns hidden below `md`.
 
-## 6. States checklist (every data surface)
+## 6. Shared view toolbar (Phase 2)
+Every task view starts with the same bar: **saved-view picker** (`ThemedSelect`) · Save / Save as / Delete · quick **filter by text or ID** · **View options** button with a theme-colour badge counting active filters · removable filter chips (blue pills). *View options* opens a drawer (Nexora: complex filters live in a drawer) with sections Filters, Group by, Sort by and Columns. Selected rows show the Nexora bulk-actions bar (`bg-blue-50`, compact selects, red Delete).
+
+Status badges and type labels use the admin-configured hex colour at 12 % opacity with the label always visible (never colour alone).
+
+## 7. States checklist (every data surface)
 Loading (`Loader2` gray), empty (icon `w-12 h-12 text-gray-300` + CTA if permitted), error (red alert banner), permission denied (redirect + Swal toast), saving (inline spinner on buttons; "Saving…" chip in Gantt toolbar), cold-start banner (Render waking up).

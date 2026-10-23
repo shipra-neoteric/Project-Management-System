@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { addDays, diffDays, fmtDate, monthLabel, parseISO, todayISO, weekday } from '@/lib/dates';
 import type { Project, Task } from '@/lib/types';
 
@@ -22,8 +22,20 @@ interface GanttChartProps {
   minWidth: number;
   themeColor: string;
   isDark: boolean;
+  /** Tasks that matched the active filter (others are shown faded, for context). */
+  matched?: Set<string>;
+  canEdit?: boolean;
   onSelect: (id: string) => void;
   onOpen: (id: string) => void;
+  /** Called after a bar is dragged (move) or its end is dragged (resize), in calendar days. */
+  onBarDrag?: (task: Task, mode: 'move' | 'resize', days: number) => void;
+}
+
+interface DragState {
+  id: string;
+  mode: 'move' | 'resize';
+  startX: number;
+  dx: number;
 }
 
 interface Segment {
@@ -82,8 +94,31 @@ function useTimeline(project: Project, rows: Task[], zoom: Zoom, minWidth: numbe
 }
 
 export const GanttChart = memo(function GanttChart(props: GanttChartProps) {
-  const { project, rows, byId, resourceNames, zoom, showCritical, showBaseline, selectedId, minWidth, themeColor, isDark, onSelect, onOpen } = props;
+  const { project, rows, byId, resourceNames, zoom, showCritical, showBaseline, selectedId, minWidth, themeColor, isDark, matched, canEdit, onSelect, onOpen, onBarDrag } = props;
   const tl = useTimeline(project, rows, zoom, minWidth);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const moved = useRef(false);
+
+  const startDrag = (e: React.PointerEvent, t: Task, mode: 'move' | 'resize') => {
+    if (!canEdit || !onBarDrag || t.isSummary || e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault(); // no text selection while dragging
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    moved.current = false;
+    setDrag({ id: t._id, mode, startX: e.clientX, dx: 0 });
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    if (Math.abs(dx) > 3) moved.current = true;
+    setDrag({ ...drag, dx });
+  };
+  const endDrag = (t: Task) => {
+    if (!drag) return;
+    const days = Math.round(drag.dx / tl.dw);
+    setDrag(null);
+    if (moved.current && days !== 0) onBarDrag?.(t, drag.mode, days);
+  };
   const height = Math.max(rows.length * ROW_H, ROW_H * 4);
   const rowIndex = useMemo(() => new Map(rows.map((t, i) => [t._id, i])), [rows]);
 
@@ -134,7 +169,7 @@ export const GanttChart = memo(function GanttChart(props: GanttChartProps) {
   }, [rows, rowIndex, byId, tl, showCritical]);
 
   return (
-    <div style={{ width: tl.width }} className="relative">
+    <div style={{ width: tl.width }} className="relative select-none">
       {/* Header */}
       <svg width={tl.width} height={HEADER_H} className="sticky top-0 z-10 block bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" aria-hidden>
         {tl.top.map((s, i) => (
@@ -188,12 +223,22 @@ export const GanttChart = memo(function GanttChart(props: GanttChartProps) {
         {rows.map((t, i) => {
           if (!t.start) return null;
           const y = i * ROW_H;
-          const bx = x(t.start);
-          const bw = (diffDays(t.start, t.finish) + 1) * tl.dw;
+          const dragging = drag?.id === t._id ? drag : null;
+          const bx = x(t.start) + (dragging?.mode === 'move' ? dragging.dx : 0);
+          const bw = Math.max(tl.dw, (diffDays(t.start, t.finish) + 1) * tl.dw + (dragging?.mode === 'resize' ? dragging.dx : 0));
+          const faded = matched && !matched.has(t._id);
+          const draggable = canEdit && !!onBarDrag && !t.isSummary;
           const color = barColor(t);
           const tip = `${t.name}\n${fmtDate(t.start)} → ${fmtDate(t.finish)}\n${t.duration} working day${t.duration === 1 ? '' : 's'} · ${t.percentComplete}% complete${t.isCritical ? '\nOn the critical path' : ''}`;
           const label = t.isMilestone ? fmtDate(t.start) : t.resources.map((r) => resourceNames.get(r)).filter(Boolean).join(', ');
-          const handlers = { onClick: () => onSelect(t._id), onDoubleClick: () => onOpen(t._id), style: { cursor: 'pointer' } };
+          const handlers = {
+            onClick: () => !moved.current && onSelect(t._id),
+            onDoubleClick: () => onOpen(t._id),
+            onPointerDown: (e: React.PointerEvent) => startDrag(e, t, 'move'),
+            onPointerMove: onDragMove,
+            onPointerUp: () => endDrag(t),
+            style: { cursor: draggable ? (dragging ? 'grabbing' : 'grab') : 'pointer', opacity: faded ? 0.35 : 1 },
+          };
 
           return (
             <g key={t._id} {...handlers}>
@@ -228,7 +273,27 @@ export const GanttChart = memo(function GanttChart(props: GanttChartProps) {
                   <rect x={bx} y={y + 9} width={bw} height={18} rx={4} fill={color} opacity={0.35} />
                   {t.percentComplete > 0 && <rect x={bx} y={y + 9} width={(bw * t.percentComplete) / 100} height={18} rx={4} fill={color} />}
                   {t._id === selectedId && <rect x={bx - 1} y={y + 8} width={bw + 2} height={20} rx={5} fill="none" stroke={color} strokeWidth={1.5} />}
+                  {draggable && (
+                    <rect
+                      x={bx + bw - 6}
+                      y={y + 9}
+                      width={8}
+                      height={18}
+                      fill="transparent"
+                      style={{ cursor: 'ew-resize' }}
+                      onPointerDown={(e) => startDrag(e, t, 'resize')}
+                      onPointerMove={onDragMove}
+                      onPointerUp={() => endDrag(t)}
+                    >
+                      <title>Drag to change the duration</title>
+                    </rect>
+                  )}
                 </>
+              )}
+              {dragging && (
+                <text x={bx} y={y + 6} fontSize={10} fontWeight={600} fill={colors.text}>
+                  {dragging.mode === 'move' ? fmtDate(addDays(t.start, Math.round(dragging.dx / tl.dw))) : `→ ${fmtDate(addDays(t.finish, Math.round(dragging.dx / tl.dw)))}`}
+                </text>
               )}
               {label && (
                 <text x={bx + (t.isMilestone ? tl.dw / 2 + 12 : bw + 6)} y={y + ROW_H / 2 + 4} fontSize={11} fill={colors.muted}>

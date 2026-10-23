@@ -1,6 +1,8 @@
 'use client';
 
-import { BarChart3, Settings, Users } from 'lucide-react';
+import { BarChart3, CalendarDays, KanbanSquare, Settings, Table2, Users } from 'lucide-react';
+import { TaskDrawerHost } from '@/components/gantt/TaskDrawer';
+import { ProjectWorkspaceProvider } from '@/features/project-context';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -12,7 +14,8 @@ import { ApiError, errorMessage } from '@/lib/api';
 import { fmtDate } from '@/lib/dates';
 import { PROJECT_ROLE, PROJECT_STATUS } from '@/lib/status';
 
-type TabKey = 'gantt' | 'resources' | 'settings';
+type TabKey = 'gantt' | 'table' | 'board' | 'calendar' | 'resources' | 'settings';
+const SUB_TABS: TabKey[] = ['table', 'board', 'calendar', 'resources', 'settings'];
 
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const { id } = useParams<{ id: string }>();
@@ -20,7 +23,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: project, isLoading, error } = useProject(id);
 
-  const tab: TabKey = pathname.endsWith('/resources') ? 'resources' : pathname.endsWith('/settings') ? 'settings' : 'gantt';
+  const tab: TabKey = SUB_TABS.find((t) => pathname.endsWith(`/${t}`)) ?? 'gantt';
 
   if (isLoading) return <PageLoader label="Loading project…" />;
   if (error || !project) {
@@ -44,6 +47,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         title={project.name}
         subtitle={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            {project.key && <span className="font-mono text-xs font-bold theme-text">{project.key}</span>}
             <Badge tone={PROJECT_STATUS[project.status].tone} dot>
               {PROJECT_STATUS[project.status].label}
             </Badge>
@@ -63,11 +67,17 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         onChange={(key) => router.push(`/projects/${id}${key === 'gantt' ? '' : `/${key}`}`)}
         tabs={[
           { key: 'gantt', label: 'Gantt chart', icon: BarChart3 },
+          { key: 'table', label: 'Table', icon: Table2 },
+          { key: 'board', label: 'Board', icon: KanbanSquare },
+          { key: 'calendar', label: 'Calendar', icon: CalendarDays },
           { key: 'resources', label: 'Resources', icon: Users },
           { key: 'settings', label: 'Settings & team', icon: Settings },
         ]}
       />
-      {children}
+      <ProjectWorkspaceProvider projectId={id}>
+        {children}
+        <TaskDrawerHost />
+      </ProjectWorkspaceProvider>
     </Page>
   );
 }

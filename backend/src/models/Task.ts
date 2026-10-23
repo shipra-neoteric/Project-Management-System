@@ -1,11 +1,23 @@
 import { Schema, model, type Types } from 'mongoose';
 import { LINK_TYPES, type LinkType } from '../scheduling/scheduler';
+import { PRIORITIES, type Priority } from './Catalog';
 
 const linkSchema = new Schema(
   {
     task: { type: Schema.Types.ObjectId, required: true },
     type: { type: String, enum: LINK_TYPES, default: 'FS' },
     lag: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+export const RELATION_TYPES = ['relates', 'blocks', 'duplicates', 'includes', 'requires'] as const;
+export type RelationType = (typeof RELATION_TYPES)[number];
+
+const relationSchema = new Schema(
+  {
+    task: { type: Schema.Types.ObjectId, required: true },
+    type: { type: String, enum: RELATION_TYPES, default: 'relates' },
   },
   { _id: false },
 );
@@ -22,6 +34,19 @@ const taskSchema = new Schema(
     predecessors: { type: [linkSchema], default: [] },
     resources: { type: [Schema.Types.ObjectId], default: [] },
     notes: { type: String, default: '', maxlength: 5000 },
+    type: { type: Schema.Types.ObjectId, ref: 'TaskType', default: null },
+    status: { type: Schema.Types.ObjectId, ref: 'Status', default: null },
+    priority: { type: String, enum: PRIORITIES, default: 'normal' },
+    assignee: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    accountable: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    category: { type: Schema.Types.ObjectId, default: null },
+    watchers: { type: [Schema.Types.ObjectId], default: [] },
+    /** Readable sequential number within the project (shown as KEY-number). */
+    number: { type: Number, default: null },
+    /** Manually scheduled: stays on `constraintStart` regardless of links. */
+    manual: { type: Boolean, default: false },
+    /** Non-scheduling relations to other tasks in the same project. */
+    relations: { type: [relationSchema], default: [] },
     baselineStart: { type: String, default: null },
     baselineFinish: { type: String, default: null },
     // Computed by the scheduler
@@ -56,6 +81,16 @@ export interface PlanTask {
   predecessors: { task: Types.ObjectId; type: LinkType; lag: number }[];
   resources: Types.ObjectId[];
   notes: string;
+  type: Types.ObjectId | null;
+  status: Types.ObjectId | null;
+  priority: Priority;
+  assignee: Types.ObjectId | null;
+  accountable: Types.ObjectId | null;
+  category: Types.ObjectId | null;
+  watchers: Types.ObjectId[];
+  number: number | null;
+  manual: boolean;
+  relations: { task: Types.ObjectId; type: RelationType }[];
   baselineStart: string | null;
   baselineFinish: string | null;
   start: string;

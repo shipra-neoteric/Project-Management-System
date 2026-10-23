@@ -11,6 +11,9 @@ import { resourcesRouter } from './routes/resources';
 import { settingsRouter } from './routes/settings';
 import { tasksRouter } from './routes/tasks';
 import { usersRouter } from './routes/users';
+import { searchRouter } from './routes/search';
+import { viewsRouter } from './routes/views';
+import { workSettingsRouter } from './routes/workSettings';
 
 export function createApp() {
   const app = express();
@@ -44,6 +47,9 @@ export function createApp() {
   app.use('/api/dashboard', requireAuth, dashboardRouter);
   app.use('/api/projects/:id/tasks', requireAuth, tasksRouter);
   app.use('/api/projects/:id/resources', requireAuth, resourcesRouter);
+  app.use('/api/projects/:id/views', requireAuth, viewsRouter);
+  app.use('/api/work-settings', requireAuth, workSettingsRouter);
+  app.use('/api/search', requireAuth, searchRouter);
   app.use('/api/projects', requireAuth, projectsRouter);
 
   app.use(notFoundHandler);

@@ -29,6 +29,9 @@ Indexes: `{ email: 1 }` unique.
 |---|---|---|
 | `_id` | ObjectId | |
 | `name` | string | required |
+| `key` | string | unique, 2–10 uppercase letters/digits; prefix of task IDs (e.g. `OF`) — generated from the name, editable |
+| `taskSeq` | number | last task number issued in this project |
+| `categories` | `[{ _id, name }]` | project task categories; removing one clears it from tasks |
 | `description` | string | optional |
 | `status` | `'active' \| 'on_hold' \| 'completed' \| 'archived'` | default `active` |
 | `startDate` | string `YYYY-MM-DD` | project start; nothing is scheduled earlier |
@@ -58,6 +61,15 @@ Indexes: `{ owner: 1 }`, `{ 'members.user': 1 }`.
 | `predecessors` | `[{ task: ObjectId, type: 'FS'\|'SS'\|'FF'\|'SF', lag: number }]` | links into this task |
 | `resources` | ObjectId[] → resources | assignments |
 | `notes` | string | |
+| `type` | ObjectId → tasktypes | |
+| `status` | ObjectId → statuses | closing statuses set `percentComplete` to 100 |
+| `priority` | `'low' \| 'normal' \| 'high' \| 'immediate'` | default `normal` |
+| `assignee`, `accountable` | ObjectId → users \| null | must be the project owner or a member |
+| `category` | ObjectId (project category) \| null | |
+| `number` | number | readable ID `KEY-number`, assigned once, never reused |
+| `manual` | boolean | manually scheduled: starts exactly on `constraintStart`, ignoring links |
+| `relations` | `[{ task: ObjectId, type: 'relates'\|'blocks'\|'duplicates'\|'includes'\|'requires' }]` | non-scheduling links (stored on one side) |
+| `watchers` | ObjectId[] | reserved for Phase 1 notifications |
 | `baselineStart`, `baselineFinish` | string \| null | snapshot from "Set baseline" |
 | **computed by scheduler** | | |
 | `start`, `finish` | string | inclusive working dates |
@@ -84,6 +96,30 @@ Indexes: `{ project: 1, rowNumber: 1 }`.
 | `user` | ObjectId → users \| null | optional link to an app user |
 
 Deleting a resource removes it from every task's `resources` array.
+
+## tasktypes / statuses (organisation-wide)
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | unique (case-insensitive) |
+| `color` | hex string | used for labels, badges, board columns, calendar bars |
+| `position` | number | display order |
+| `isDefault` | boolean | exactly one default (new tasks) |
+| `isMilestone` | boolean | *types only*: used for tasks created with duration 0 |
+| `isClosed` | boolean | *statuses only*: counts as done |
+
+Seeded automatically on first start; items in use by tasks cannot be deleted.
+
+## views (saved views)
+
+| Field | Type | Notes |
+|---|---|---|
+| `project` | ObjectId → projects | |
+| `owner` | ObjectId → users | creator |
+| `name` | string | |
+| `kind` | `'gantt' \| 'table' \| 'board' \| 'calendar'` | |
+| `isPublic` | boolean | shared with the whole project (managers only) |
+| `config` | `{ filters[], search, sort[], groupBy, columns[], options }` | interpreted by the frontend query engine |
 
 ## Relationships
 
