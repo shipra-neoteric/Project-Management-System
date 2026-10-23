@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Nexora: class-based dark mode (`dark` class on <html>) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+
+  --animate-fade-in: fade-in 0.5s ease;
+  --animate-fade-in-down: fade-in-down 0.3s ease;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-in-down {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+}
+
+/* Dynamic brand color — overwritten at runtime from organisation settings */
+:root {
+  --theme-primary: #f97316;
+  --theme-primary-light: #fb923c;
+  --theme-primary-dark: #ea580c;
+}
+
+html { font-family: var(--font-sans); }
+body { @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-white antialiased; }
+
+@utility theme-bg { background-color: var(--theme-primary); }
+@utility theme-bg-dark { background-color: var(--theme-primary-dark); }
+@utility theme-text { color: var(--theme-primary); }
+@utility theme-border { border-color: var(--theme-primary); }
+@utility theme-button { background-color: var(--theme-primary); color: white; }
+@utility theme-gradient { background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-light)); }
+@utility theme-nav-hover {
+  &:hover { color: var(--theme-primary); }
+}
+
+@utility custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(209 213 219) transparent;
+  &::-webkit-scrollbar { width: 8px; height: 8px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgb(209 213 219); border-radius: 9999px; }
+  &::-webkit-scrollbar-thumb:hover { background: var(--theme-primary); }
+}
+.dark .custom-scrollbar { scrollbar-color: rgb(75 85 99) transparent; }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(75 85 99); }
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+/* Remove native number spinners (Nexora forms) */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; }
+
+.dark input[type='date'] { color-scheme: dark; }
+
+/* SweetAlert2 above everything, matching the app theme */
+.swal2-container { z-index: 99999 !important; }
+.swal2-popup { font-family: var(--font-sans) !important; border-radius: 0.5rem !important; }
+.dark .swal2-popup { background: rgb(31 41 55) !important; color: white !important; }
+.dark .swal2-title, .dark .swal2-html-container { color: rgb(243 244 246) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  aside, header, .no-print { display: none !important; }
+}
