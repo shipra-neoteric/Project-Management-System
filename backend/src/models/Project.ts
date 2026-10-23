@@ -2,6 +2,9 @@ import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mong
 
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed', 'archived'] as const;
 export const MEMBER_ROLES = ['manager', 'member', 'viewer'] as const;
+export const PROJECT_KINDS = ['project', 'program', 'portfolio'] as const;
+export const PROJECT_MODULES = ['gantt', 'table', 'board', 'calendar', 'resources', 'activity'] as const;
+export type ProjectModule = (typeof PROJECT_MODULES)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type ProjectRole = 'owner' | MemberRole;
 
@@ -21,6 +24,26 @@ const projectSchema = new Schema(
     /** Last task number handed out in this project. */
     taskSeq: { type: Number, default: 0 },
     description: { type: String, default: '', maxlength: 2000 },
+    /** project = plan with tasks; program / portfolio = containers that roll up their sub-projects. */
+    kind: { type: String, enum: PROJECT_KINDS, default: 'project' },
+    parent: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
+    isTemplate: { type: Boolean, default: false },
+    /** Disabled modules are hidden from the project's tabs. */
+    disabledModules: { type: [{ type: String, enum: PROJECT_MODULES }], default: [] },
+    /** Life-cycle phases with planned dates and a gate decision at the end of each phase. */
+    lifecycle: {
+      type: [
+        {
+          _id: false,
+          definition: { type: Schema.Types.ObjectId, ref: 'PhaseDefinition', required: true },
+          start: { type: String, default: null },
+          finish: { type: String, default: null },
+          gateStatus: { type: String, enum: ['pending', 'passed', 'failed'], default: 'pending' },
+        },
+      ],
+      default: [],
+    },
+    customValues: { type: Schema.Types.Mixed, default: {} },
     status: { type: String, enum: PROJECT_STATUSES, default: 'active' },
     startDate: { type: String, required: true },
     finishDate: { type: String, required: true },

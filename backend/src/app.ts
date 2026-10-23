@@ -14,6 +14,10 @@ import { usersRouter } from './routes/users';
 import { searchRouter } from './routes/search';
 import { viewsRouter } from './routes/views';
 import { workSettingsRouter } from './routes/workSettings';
+import { attachmentsRouter } from './routes/attachments';
+import { notificationsRouter } from './routes/notifications';
+import { projectViewsRouter } from './routes/projectViews';
+import { taskActivityRouter } from './routes/taskActivity';
 
 export function createApp() {
   const app = express();
@@ -45,11 +49,15 @@ export function createApp() {
   app.use('/api/users', requireAuth, usersRouter);
   app.use('/api/settings', requireAuth, settingsRouter);
   app.use('/api/dashboard', requireAuth, dashboardRouter);
+  app.use('/api/projects/:id/tasks/:taskId/attachments', requireAuth, attachmentsRouter);
+  app.use('/api/projects/:id/tasks/:taskId', requireAuth, taskActivityRouter);
   app.use('/api/projects/:id/tasks', requireAuth, tasksRouter);
   app.use('/api/projects/:id/resources', requireAuth, resourcesRouter);
   app.use('/api/projects/:id/views', requireAuth, viewsRouter);
   app.use('/api/work-settings', requireAuth, workSettingsRouter);
   app.use('/api/search', requireAuth, searchRouter);
+  app.use('/api/notifications', requireAuth, notificationsRouter);
+  app.use('/api/project-views', requireAuth, projectViewsRouter);
   app.use('/api/projects', requireAuth, projectsRouter);
 
   app.use(notFoundHandler);

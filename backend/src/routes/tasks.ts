@@ -9,7 +9,9 @@ import { RELATION_TYPES, type PlanTask } from '../models/Task';
 import { User } from '../models/User';
 import { isISODate } from '../scheduling/calendar';
 import { LINK_TYPES } from '../scheduling/scheduler';
-import { getCatalog, type Catalog } from '../services/catalog';
+import type { ProjectRole } from '../models/Project';
+import { recordTaskCreated, recordTaskDeleted, recordTaskUpdated } from '../services/activity';
+import { cleanCustomValues, getCatalog, isTransitionAllowed, type Catalog } from '../services/catalog';
 import { loadTasks, mutatePlan, serializeProject } from '../services/planService';
 import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
 
@@ -29,6 +31,7 @@ const attributeSchema = z.object({
   accountable: objectId.nullable().optional(),
   category: objectId.nullable().optional(),
   percentComplete: z.number().min(0).max(100).optional(),
+  customValues: z.record(z.string(), z.unknown()).optional(),
 });
 
 const createSchema = attributeSchema.extend({
@@ -61,6 +64,16 @@ const sameParent = (a: PlanTask, b: PlanTask) => String(a.parent ?? '') === Stri
 const siblingsOf = (tasks: PlanTask[], t: PlanTask) => tasks.filter((x) => sameParent(x, t)).sort((a, b) => a.order - b.order);
 const oid = (v: string) => new Types.ObjectId(v);
 
+/** Copy of a task for "before" history snapshots; ObjectIds are immutable so they can be shared. */
+const snapshotTask = (t: PlanTask): PlanTask => ({
+  ...t,
+  predecessors: t.predecessors.map((l) => ({ ...l })),
+  relations: (t.relations ?? []).map((r) => ({ ...r })),
+  resources: [...t.resources],
+  watchers: [...(t.watchers ?? [])],
+  customValues: { ...(t.customValues ?? {}) },
+});
+
 function findTask(tasks: PlanTask[], id: string) {
   const task = tasks.find((t) => t._id.toString() === id);
   if (!task) throw notFound('Task');
@@ -84,7 +97,7 @@ function withDescendants(tasks: PlanTask[], ids: Iterable<string>): Set<string> 
 }
 
 /** Validates attribute ids against the catalog and project; returns a function applying them to a task. */
-async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attributeSchema>, catalog: Catalog) {
+async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attributeSchema>, catalog: Catalog, role: ProjectRole) {
   if (patch.type && !catalog.types.some((t) => String(t._id) === patch.type)) throw badRequest('Unknown task type');
   if (patch.status && !catalog.statuses.some((s) => String(s._id) === patch.status)) throw badRequest('Unknown status');
   if (patch.category && !project.categories.some((c) => String(c._id) === patch.category)) throw badRequest('Unknown category for this project');
@@ -98,14 +111,27 @@ async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attr
   }
   const closed = new Set(catalog.statuses.filter((s) => s.isClosed).map((s) => String(s._id)));
 
+  const statusName = (id: unknown) => catalog.statuses.find((s) => String(s._id) === String(id))?.name ?? 'none';
+
   return (task: PlanTask) => {
     if (patch.type !== undefined) task.type = oid(patch.type);
+    if (patch.customValues !== undefined) {
+      task.customValues = cleanCustomValues(catalog, 'task', patch.customValues, task.customValues ?? {}, (id) => isProjectPerson(project, id));
+    }
     if (patch.priority !== undefined) task.priority = patch.priority;
-    if (patch.assignee !== undefined) task.assignee = patch.assignee ? oid(patch.assignee) : null;
+    if (patch.assignee !== undefined) {
+      task.assignee = patch.assignee ? oid(patch.assignee) : null;
+      // Assignees watch their tasks automatically.
+      if (task.assignee && !(task.watchers ?? []).some((w) => String(w) === String(task.assignee))) task.watchers = [...(task.watchers ?? []), task.assignee];
+    }
     if (patch.accountable !== undefined) task.accountable = patch.accountable ? oid(patch.accountable) : null;
     if (patch.category !== undefined) task.category = patch.category ? oid(patch.category) : null;
     if (patch.percentComplete !== undefined && !task.isSummary) task.percentComplete = Math.round(patch.percentComplete);
     if (patch.status !== undefined) {
+      const from = task.status ? String(task.status) : null;
+      if (!isTransitionAllowed(catalog.workflow, role, from, patch.status)) {
+        throw badRequest(`Your role may not move "${task.name}" from ${statusName(from)} to ${statusName(patch.status)} (workflow rules)`);
+      }
       const changed = String(task.status ?? '') !== patch.status;
       task.status = oid(patch.status);
       // Closing a task marks it as done.
@@ -150,6 +176,7 @@ function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<Pl
     createdBy: userId,
     updatedBy: userId,
     ...fields,
+    customValues: fields.customValues ?? {},
   };
 }
 
@@ -163,8 +190,9 @@ tasksRouter.post('/', loadProject('member'), async (req, res) => {
   const body = parseBody(createSchema, req.body);
   const project = req.project!;
   const catalog = await getCatalog();
-  const apply = await prepareAttributes(project, body, catalog);
+  const apply = await prepareAttributes(project, body, catalog, 'owner');
   const task = newTask(project, req.user!._id, {
+    watchers: [req.user!._id],
     name: body.name,
     duration: body.duration,
     constraintStart: body.constraintStart ?? null,
@@ -181,22 +209,25 @@ tasksRouter.post('/', loadProject('member'), async (req, res) => {
     }
     tasks.push(task);
   });
+  const created = result.tasks.find((t) => String(t._id) === String(task._id));
+  if (created) await recordTaskCreated(project, req.user!, created);
   res.status(201).json({ ...result, createdTaskId: task._id.toString() });
 });
 
 tasksRouter.patch('/:taskId', loadProject('member'), async (req, res) => {
   const body = parseBody(updateSchema, req.body);
   const project = req.project!;
-  const apply = await prepareAttributes(project, body, await getCatalog());
+  const apply = await prepareAttributes(project, body, await getCatalog(), req.projectRole!);
+  let before: PlanTask | null = null;
 
   if (body.resources?.length) {
     const count = await Resource.countDocuments({ project: project._id, _id: { $in: body.resources } });
     if (count !== new Set(body.resources).size) throw badRequest('One or more resources do not belong to this project');
   }
 
-  res.json(
-    await mutatePlan(project, req.user!, (tasks) => {
+  const result = await mutatePlan(project, req.user!, (tasks) => {
       const task = findTask(tasks, String(req.params.taskId));
+      before = snapshotTask(task);
       const ids = new Set(tasks.map((t) => t._id.toString()));
       const self = task._id.toString();
       if (body.name !== undefined) task.name = body.name;
@@ -231,29 +262,41 @@ tasksRouter.patch('/:taskId', loadProject('member'), async (req, res) => {
           task.relations.push({ task: oid(rel.task), type: rel.type });
         }
       }
-    }),
-  );
+    });
+  const after = result.tasks.find((t) => String(t._id) === String(req.params.taskId));
+  if (before && after) await recordTaskUpdated(project, req.user!, before, after, result.tasks);
+  res.json(result);
 });
 
 tasksRouter.post('/bulk', loadProject('member'), async (req, res) => {
   const body = parseBody(bulkSchema, req.body);
-  const apply = await prepareAttributes(req.project!, body.patch, await getCatalog());
-  res.json(
-    await mutatePlan(req.project!, req.user!, (tasks) => {
-      const ids = new Set(body.taskIds);
-      for (const t of tasks) if (ids.has(t._id.toString())) apply(t);
-    }),
-  );
+  const apply = await prepareAttributes(req.project!, body.patch, await getCatalog(), req.projectRole!);
+  const befores = new Map<string, PlanTask>();
+  const result = await mutatePlan(req.project!, req.user!, (tasks) => {
+    const ids = new Set(body.taskIds);
+    for (const t of tasks) {
+      if (!ids.has(t._id.toString())) continue;
+      befores.set(t._id.toString(), snapshotTask(t));
+      apply(t);
+    }
+  });
+  for (const after of result.tasks) {
+    const before = befores.get(String(after._id));
+    if (before) await recordTaskUpdated(req.project!, req.user!, before, after, result.tasks);
+  }
+  res.json(result);
 });
 
 tasksRouter.post('/bulk-delete', loadProject('member'), async (req, res) => {
   const { taskIds } = parseBody(z.object({ taskIds: idsSchema }), req.body);
-  res.json(
-    await mutatePlan(req.project!, req.user!, (tasks) => {
-      const doomed = withDescendants(tasks, taskIds);
-      return tasks.filter((t) => !doomed.has(t._id.toString()));
-    }),
-  );
+  let removed: PlanTask[] = [];
+  const result = await mutatePlan(req.project!, req.user!, (tasks) => {
+    const doomed = withDescendants(tasks, taskIds);
+    removed = tasks.filter((t) => doomed.has(t._id.toString()));
+    return tasks.filter((t) => !doomed.has(t._id.toString()));
+  });
+  for (const t of removed) await recordTaskDeleted(req.project!, req.user!, t);
+  res.json(result);
 });
 
 /** Copies or moves tasks (with their sub-tasks) to this or another project. */
@@ -313,17 +356,25 @@ tasksRouter.post('/transfer', loadProject('member'), async (req, res) => {
         ? targetPlan
         : { project: await serializeProject(source, req.user!), tasks: await loadTasks(source._id) };
 
+  for (const copy of copies) {
+    const original = picked.find((t) => idMap.get(t._id.toString())?.equals(copy._id));
+    const note = sameProject ? `Copied from "${original?.name}"` : `${body.mode === 'move' ? 'Moved' : 'Copied'} from project ${source.name}`;
+    await recordTaskCreated(target, req.user!, copy, note);
+  }
+  if (body.mode === 'move') for (const t of picked) await recordTaskDeleted(source, req.user!, t, `Moved to project ${target.name}`);
   res.json({ ...sourcePlan, transferred: copies.length });
 });
 
 tasksRouter.delete('/:taskId', loadProject('member'), async (req, res) => {
-  res.json(
-    await mutatePlan(req.project!, req.user!, (tasks) => {
-      findTask(tasks, String(req.params.taskId));
-      const doomed = withDescendants(tasks, [String(req.params.taskId)]);
-      return tasks.filter((t) => !doomed.has(t._id.toString()));
-    }),
-  );
+  let removed: PlanTask[] = [];
+  const result = await mutatePlan(req.project!, req.user!, (tasks) => {
+    findTask(tasks, String(req.params.taskId));
+    const doomed = withDescendants(tasks, [String(req.params.taskId)]);
+    removed = tasks.filter((t) => doomed.has(t._id.toString()));
+    return tasks.filter((t) => !doomed.has(t._id.toString()));
+  });
+  for (const t of removed) await recordTaskDeleted(req.project!, req.user!, t);
+  res.json(result);
 });
 
 tasksRouter.post('/:taskId/move', loadProject('member'), async (req, res) => {

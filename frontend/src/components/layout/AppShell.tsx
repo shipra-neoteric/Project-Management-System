@@ -8,6 +8,9 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  MailWarning,
+  Star,
+  UserCircle,
   Menu,
   Moon,
   Settings,
@@ -21,7 +24,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PageLoader } from '@/components/ui/Feedback';
 import { GlobalSearch } from './GlobalSearch';
-import { useOrgSettings } from '@/features/queries';
+import { NotificationBell } from './Notifications';
+import { useOrgSettings, useProjects } from '@/features/queries';
+import { api } from '@/lib/api';
+import { toastError, toastSuccess } from '@/lib/alerts';
 import { SLOW_EVENT } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/cn';
@@ -46,7 +52,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Admin',
     items: [
       { href: '/users', label: 'Users', icon: Users, adminOnly: true },
-      { href: '/work-settings', label: 'Types & statuses', icon: ListChecks, adminOnly: true },
+      { href: '/work-settings', label: 'Work settings', icon: ListChecks, adminOnly: true },
       { href: '/settings', label: 'Organisation', icon: Settings, adminOnly: true },
     ],
   },
@@ -115,6 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenu={() => setMobileOpen(true)} orgName={orgName} />
         <SlowServerBanner />
+        <VerifyEmailBanner />
         <main className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="p-3 sm:p-4 lg:p-6">{children}</div>
         </main>
@@ -152,6 +159,7 @@ function Sidebar({ collapsed, mobileOpen, orgName, onToggle, onClose }: { collap
       </div>
 
       <nav className="flex-1 overflow-y-auto custom-scrollbar px-3 py-4 space-y-5">
+        <FavoritesNav collapsed={collapsed} />
         {NAV.map((group) => {
           const items = group.items.filter((i) => !i.adminOnly || isAdmin);
           if (!items.length) return null;
@@ -234,6 +242,7 @@ function Header({ onMenu, orgName }: { onMenu: () => void; orgName: string }) {
         </div>
         <div className="flex items-center gap-2">
           <GlobalSearch />
+          <NotificationBell />
           <button
             onClick={toggleTheme}
             className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -263,6 +272,14 @@ function Header({ onMenu, orgName }: { onMenu: () => void; orgName: string }) {
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
                 </div>
+                <Link
+                  href="/profile"
+                  onClick={() => setMenuOpen(false)}
+                  role="menuitem"
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                >
+                  <UserCircle className="w-4 h-4" /> My profile
+                </Link>
                 <button
                   onClick={logout}
                   role="menuitem"
@@ -291,6 +308,78 @@ function SlowServerBanner() {
   return (
     <div className="mx-1 mt-1 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-sm animate-fade-in-down">
       Waking up the server… the free hosting plan sleeps when idle, so this can take up to a minute.
+    </div>
+  );
+}
+
+/** Quick links to the user's starred projects. */
+function FavoritesNav({ collapsed }: { collapsed: boolean }) {
+  const projects = useProjects();
+  const pathname = usePathname();
+  const { themeColor } = useTheme();
+  const favorites = (projects.data ?? []).filter((p) => p.favorite).slice(0, 8);
+  if (!favorites.length) return null;
+  return (
+    <div>
+      <p className={cn('px-2.5 mb-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1', collapsed && 'lg:justify-center lg:px-0')}>
+        <Star className="w-3 h-3" />
+        <span className={cn(collapsed && 'lg:hidden')}>Favorites</span>
+      </p>
+      <ul className="space-y-0.5">
+        {favorites.map((p) => {
+          const active = pathname.startsWith(`/projects/${p._id}`);
+          return (
+            <li key={p._id}>
+              <Link
+                href={`/projects/${p._id}`}
+                title={p.name}
+                className={cn('flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg text-[14px] transition-colors', active ? 'font-semibold' : 'font-medium text-gray-600 dark:text-gray-300 theme-nav-hover', collapsed && 'lg:justify-center')}
+                style={active ? { color: themeColor, backgroundColor: `${themeColor}1a` } : undefined}
+              >
+                <span className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: themeColor }}>
+                  {(p.key || p.name).slice(0, 2)}
+                </span>
+                <span className={cn('truncate', collapsed && 'lg:hidden')}>{p.name}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Reminds people to confirm their email (needed for email notifications). */
+function VerifyEmailBanner() {
+  const { user } = useAuth();
+  const [hidden, setHidden] = useState(false);
+  const [sending, setSending] = useState(false);
+  if (!user || user.emailVerified !== false || hidden) return null;
+  return (
+    <div className="mx-1 mt-1 px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm flex flex-wrap items-center gap-2">
+      <MailWarning className="w-4 h-4 shrink-0" />
+      <span className="flex-1 min-w-0">Please confirm your email address ({user.email}) to receive email notifications.</span>
+      <button
+        type="button"
+        disabled={sending}
+        className="font-medium underline disabled:opacity-50"
+        onClick={async () => {
+          setSending(true);
+          try {
+            await api('/auth/resend-verification', { method: 'POST' });
+            void toastSuccess('Confirmation email sent');
+          } catch {
+            void toastError('Could not send the email');
+          } finally {
+            setSending(false);
+          }
+        }}
+      >
+        Resend email
+      </button>
+      <button type="button" className="text-blue-500 hover:text-blue-700" onClick={() => setHidden(true)} aria-label="Dismiss">
+        <X className="w-4 h-4" />
+      </button>
     </div>
   );
 }

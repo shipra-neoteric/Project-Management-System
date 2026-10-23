@@ -26,7 +26,8 @@ import { BulkBar } from '@/components/views/BulkBar';
 import { useViewState } from '@/components/views/useViewState';
 import { ViewToolbar } from '@/components/views/ViewToolbar';
 import { useWorkspace } from '@/features/project-context';
-import { keys, useTaskMutations, type TaskPatch } from '@/features/queries';
+import { keys, useBaselines, useBaselineSnapshot, useTaskMutations, type TaskPatch } from '@/features/queries';
+import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { confirmDanger, toastError } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -82,6 +83,9 @@ export function GanttView() {
   const [showCritical, setShowCritical] = usePersistentState('pms_gantt_critical', false);
   const [showBaseline, setShowBaseline] = usePersistentState('pms_gantt_baseline', false);
   const [gridWidth, setGridWidth] = usePersistentState<number | null>('pms_gantt_grid_width', null);
+  const [baselineId, setBaselineId] = useState('');
+  const baselines = useBaselines(projectId);
+  const snapshot = useBaselineSnapshot(projectId, baselineId || null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState(1000);
@@ -113,6 +117,13 @@ export function GanttView() {
     const isFiltered = filtered.matched.size !== tasks.length;
     return { rows: visible, matched: isFiltered ? filtered.matched : undefined };
   }, [tasks, ctx, viewState.config, collapsed]);
+
+  // Compare against an older saved baseline instead of the latest one.
+  const chartRows = useMemo(() => {
+    if (!baselineId || !snapshot.data) return rows;
+    const map = new Map(snapshot.data.tasks.map((b) => [b.task, b]));
+    return rows.map((t) => ({ ...t, baselineStart: map.get(t._id)?.start ?? null, baselineFinish: map.get(t._id)?.finish ?? null }));
+  }, [rows, baselineId, snapshot.data]);
 
   // Drop selections of tasks that no longer exist.
   useEffect(() => {
@@ -302,6 +313,16 @@ export function GanttView() {
           disabled={!project.baselineSavedAt}
           onClick={() => setShowBaseline(!showBaseline)}
         />
+        {showBaseline && (baselines.data?.length ?? 0) > 1 && (
+          <div className="w-48">
+            <ThemedSelect
+              compact
+              options={[{ value: '', label: 'Latest baseline' }, ...(baselines.data ?? []).map((b) => ({ value: b._id, label: b.name, description: `Finish ${b.finishDate}` }))]}
+              value={baselineId}
+              onChange={setBaselineId}
+            />
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {saving ? (
             <span className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -317,7 +338,7 @@ export function GanttView() {
             icon={GanttChartSquare}
             label="Gantt PDF"
             disabled={!rows.length}
-            onClick={() => run(() => exportGanttPdf(project, rows, { showCritical, showBaseline: showBaseline && !!project.baselineSavedAt }))}
+            onClick={() => run(() => exportGanttPdf(project, chartRows, { showCritical, showBaseline: showBaseline && !!project.baselineSavedAt }))}
           />
         </div>
       </div>
@@ -375,7 +396,7 @@ export function GanttView() {
               </div>
               <GanttChart
                 project={project}
-                rows={rows}
+                rows={chartRows}
                 byId={byId}
                 resourceNames={resourceNames}
                 zoom={zoom}

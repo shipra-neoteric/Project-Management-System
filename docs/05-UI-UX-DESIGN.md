@@ -86,5 +86,22 @@ Every task view starts with the same bar: **saved-view picker** (`ThemedSelect`)
 
 Status badges and type labels use the admin-configured hex colour at 12 % opacity with the label always visible (never colour alone).
 
-## 7. States checklist (every data surface)
+## 7. Phase 1 & 3 screens
+| Route / place | Content |
+|---|---|
+| Header | Notification **bell** (unread badge in theme colour, dropdown, "View all"), profile menu link |
+| `/notifications` | Unread / All tabs, mark all read, click opens the task |
+| `/profile` | Name, email status, email-notification toggle, change password |
+| `/forgot-password`, `/reset-password`, `/verify-email` | Auth-card pages (same as login) |
+| Task drawer | Tabs **Details · Activity · Files**, Watch toggle, *Additional fields* section, status list limited by workflow, optional fields hidden per type |
+| `/projects` | Tree (portfolio → program → project) with roll-up progress, favorite stars, tabs All / Favorites / Templates / Archived, status & type filters, Columns drawer, Excel export, saved lists |
+| `/projects/[id]/overview` | KPI row, About + attributes, Life cycle strip, charts, Sub-projects, Milestones, Recent activity |
+| `/projects/[id]/activity` | Project activity timeline with filters |
+| Project settings | + Project attributes, Life cycle & gates, Baselines, Modules, Copy / Use template |
+| `/work-settings` (Admin) | Tabs: Task types (incl. form fields), Statuses, Workflow matrix, Custom fields, Project phases |
+| Dashboard | **Customize** drawer: switch widgets on/off and reorder; saved per user |
+
+**Charts** follow the dataviz rules: part-to-whole is one stacked bar with 2px gaps plus a legend that always lists name, count and share (never colour alone); magnitude is single-hue bars sorted by value with the number at the bar end; gates use icon + label (✓ passed, ✕ failed, ○ pending).
+
+## 8. States checklist (every data surface)
 Loading (`Loader2` gray), empty (icon `w-12 h-12 text-gray-300` + CTA if permitted), error (red alert banner), permission denied (redirect + Swal toast), saving (inline spinner on buttons; "Saving…" chip in Gantt toolbar), cold-start banner (Render waking up).

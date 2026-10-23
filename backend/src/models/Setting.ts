@@ -7,6 +7,12 @@ const settingSchema = new Schema(
     key: { type: String, required: true, unique: true },
     orgName: { type: String, default: DEFAULT_SETTINGS.orgName, trim: true, maxlength: 80 },
     themeColor: { type: String, default: DEFAULT_SETTINGS.themeColor },
+    /**
+     * Allowed status transitions per project role:
+     * `{ manager: { "<fromStatusId>": ["<toStatusId>", …] }, member: {…} }`.
+     * A role without an entry may change to any status. Owners/admins are never restricted.
+     */
+    workflow: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },
 );

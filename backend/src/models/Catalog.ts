@@ -8,6 +8,8 @@ const taskTypeSchema = new Schema(
     position: { type: Number, default: 0 },
     isDefault: { type: Boolean, default: false },
     isMilestone: { type: Boolean, default: false },
+    /** Optional built-in fields and custom field ids hidden on the task form for this type. */
+    hiddenFields: { type: [String], default: [] },
   },
   { timestamps: true },
 );

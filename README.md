@@ -2,7 +2,7 @@
 
 An in-house, MS Project–style planning tool for Neoteric Properties, built from scratch and styled as a Nexora module.
 
-**Features:** Gantt, Table, Kanban board and Calendar views with filters, grouping and saved views · drag-and-drop scheduling · readable task IDs (OF-12) · types, statuses, priorities, assignees, categories · bulk edit, copy & move between projects · global search (Ctrl+K) · graphical Gantt PDF · Gantt chart with an MS Project–style task grid · auto-scheduling with FS/SS/FF/SF dependencies and lag · working calendar with holidays · summary tasks and outline (indent/outdent) · milestones · critical path · baselines and slippage · resources and workload · team sharing with Owner/Manager/Member/Viewer roles · dashboard · Excel and PDF export · light and dark mode · mobile-friendly.
+**Features:** portfolios, programs & sub-projects with roll-ups · project overview with charts · templates & project copy · custom fields for tasks and projects · life-cycle phases & gates · comments with @mentions, task history, attachments, watchers · in-app & email notifications · status workflows · favorites, saved project lists, configurable dashboard · multiple baselines · password reset & email confirmation · Gantt, Table, Kanban board and Calendar views with filters, grouping and saved views · drag-and-drop scheduling · readable task IDs (OF-12) · types, statuses, priorities, assignees, categories · bulk edit, copy & move between projects · global search (Ctrl+K) · graphical Gantt PDF · Gantt chart with an MS Project–style task grid · auto-scheduling with FS/SS/FF/SF dependencies and lag · working calendar with holidays · summary tasks and outline (indent/outdent) · milestones · critical path · baselines and slippage · resources and workload · team sharing with Owner/Manager/Member/Viewer roles · dashboard · Excel and PDF export · light and dark mode · mobile-friendly.
 
 | Part | Tech | Hosting (free tier) |
 |---|---|---|
@@ -43,18 +43,25 @@ npm run dev               # http://localhost:3000
 
 Register an account (the first account becomes Admin).
 
-Optional sample data (an office fit-out project with 18 tasks, resources and a baseline):
+## Demo data (local or live)
+
+`seed:demo` creates a showcase through the API: the **Corporate Real Estate Program** containing **Corporate Office Fit-out** (18 tasks with links, statuses, categories, resources, a named baseline, life-cycle phases and a comment) and **Reception & Lobby Refurbishment** (6 tasks), plus the **Office Fit-out Template**. Everything is owned by the account you pass in.
 
 ```bash
 cd backend
-npm run seed:demo -- http://localhost:4000/api you@company.com YourPassword123 "Your Name"
+# Live site: register your admin account on the website first, then use its email/password here
+npm run seed:demo -- https://<your-api>.onrender.com/api you@company.com YourPassword "Your Name"
+
+# Remove it again — first a dry run that lists what would go, then the real delete
+npm run seed:cleanup -- https://<your-api>.onrender.com/api you@company.com YourPassword
+npm run seed:cleanup -- https://<your-api>.onrender.com/api you@company.com YourPassword --yes
 ```
 
-The same command works against the live API (`https://<your-api>.onrender.com/api`) to prepare a demo.
+The clean-up deletes only projects with the demo names that this account owns (with their tasks, files, comments and baselines); your real projects are untouched. Running the seed twice creates a second copy, and the clean-up removes both.
 
 ## Quality checks
 
 ```bash
-cd backend  && npm run typecheck && npm test     # 29 tests: scheduler, API, Phase 2 features
+cd backend  && npm run typecheck && npm test     # 41 tests: scheduler, API, Phases 1–3
 cd frontend && npm run typecheck && npm run build
 ```

@@ -12,6 +12,31 @@ export interface User {
   email: string;
   role: AppRole;
   isActive: boolean;
+  emailVerified?: boolean;
+  notifyByEmail?: boolean;
+  favorites?: string[];
+  dashboardWidgets?: string[] | null;
+}
+
+export type ProjectKind = 'project' | 'program' | 'portfolio';
+export type ProjectModule = 'gantt' | 'table' | 'board' | 'calendar' | 'resources' | 'activity';
+export type GateStatus = 'pending' | 'passed' | 'failed';
+
+export interface LifecyclePhase {
+  definition: string;
+  start: string | null;
+  finish: string | null;
+  gateStatus: GateStatus;
+}
+
+export interface Rollup {
+  taskCount: number;
+  completedCount: number;
+  overdueCount: number;
+  percentComplete: number;
+  startDate: string | null;
+  finishDate: string | null;
+  projectCount: number;
 }
 
 export interface UserRef {
@@ -37,6 +62,14 @@ export interface Project {
   name: string;
   key: string;
   categories: Category[];
+  kind: ProjectKind;
+  parent: string | { _id: string; name: string; key: string; kind: ProjectKind } | null;
+  isTemplate: boolean;
+  disabledModules: ProjectModule[];
+  lifecycle: LifecyclePhase[];
+  customValues: Record<string, unknown>;
+  favorite?: boolean;
+  rollup?: Rollup;
   description: string;
   status: ProjectStatus;
   startDate: string;
@@ -79,6 +112,8 @@ export interface Task {
   number: number | null;
   manual: boolean;
   relations: { task: string; type: RelationType }[];
+  watchers: string[];
+  customValues: Record<string, unknown>;
   baselineStart: string | null;
   baselineFinish: string | null;
   start: string;
@@ -126,6 +161,9 @@ export interface Dashboard {
   kpis: { projects: number; activeTasks: number; overdueTasks: number; percentComplete: number };
   upcomingMilestones: DashboardTask[];
   overdueTasks: DashboardTask[];
+  myTasks: (DashboardTask & { status: string | null; priority: Priority; number: number | null })[];
+  statusCounts: CountRow[];
+  assigneeCounts: CountRow[];
 }
 
 export interface TaskType {
@@ -135,6 +173,7 @@ export interface TaskType {
   position: number;
   isDefault: boolean;
   isMilestone: boolean;
+  hiddenFields: string[];
 }
 
 export interface Status {
@@ -146,13 +185,97 @@ export interface Status {
   isClosed: boolean;
 }
 
+export type CustomFieldKind = 'text' | 'longtext' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean' | 'user';
+
+export interface CustomField {
+  _id: string;
+  name: string;
+  scope: 'task' | 'project';
+  kind: CustomFieldKind;
+  options: { _id: string; name: string }[];
+  required: boolean;
+  position: number;
+  description: string;
+}
+
+export interface PhaseDefinition {
+  _id: string;
+  name: string;
+  color: string;
+  gate: string;
+  position: number;
+}
+
+export type Workflow = Partial<Record<'manager' | 'member', Record<string, string[]>>>;
+
 export interface WorkSettings {
   types: TaskType[];
   statuses: Status[];
   priorities: Priority[];
+  phases: PhaseDefinition[];
+  customFields: CustomField[];
+  workflow: Workflow;
 }
 
-export type ViewKind = 'gantt' | 'table' | 'board' | 'calendar';
+export interface JournalEntry {
+  _id: string;
+  project: string;
+  task: string | null;
+  taskName: string;
+  user: { _id: string; name: string; email: string } | null;
+  kind: 'created' | 'change' | 'comment' | 'deleted' | 'attachment';
+  text: string;
+  changes: { field: string; label: string; from: string; to: string }[];
+  editedAt: string | null;
+  createdAt: string;
+}
+
+export interface AppNotification {
+  _id: string;
+  actor: { _id: string; name: string } | null;
+  project: string;
+  projectName: string;
+  task: string | null;
+  taskName: string;
+  reason: 'mentioned' | 'assigned' | 'accountable' | 'commented' | 'updated' | 'watched';
+  summary: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface Attachment {
+  _id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  uploadedBy: { _id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface BaselineSummary {
+  _id: string;
+  name: string;
+  finishDate: string;
+  createdBy: { _id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface CountRow {
+  value: string;
+  count: number;
+}
+
+export interface ProjectOverview {
+  project: Project;
+  rollup: Rollup;
+  children: (Pick<Project, '_id' | 'name' | 'key' | 'kind' | 'status' | 'startDate' | 'finishDate' | 'stats'> & { rollup: Rollup })[];
+  counts: { status: CountRow[]; type: CountRow[]; priority: CountRow[]; assignee: CountRow[] };
+  upcomingMilestones: { _id: string; name: string; start: string; project: string; projectName: string; projectKey: string; number: number | null }[];
+  overdue: number;
+  recentActivity: JournalEntry[];
+}
+
+export type ViewKind = 'gantt' | 'table' | 'board' | 'calendar' | 'projects';
 
 export interface ViewFilter {
   field: string;

@@ -65,6 +65,20 @@ Back in Render → Environment → set `FRONTEND_URL` to the Vercel URL (comma-s
 
 Open the Vercel URL → **Register**. The **first account becomes Admin**. Teammates register themselves; add them to projects from *Project → Settings → Members*.
 
+## 6b. Email (optional, free)
+
+Without SMTP the app works fully, but emails (notifications, password reset, email confirmation) are only written to the Render log. To send real emails, add these to Render → Environment:
+
+| Key | Example |
+|---|---|
+| `SMTP_HOST` | `smtp-relay.brevo.com` (Brevo free plan: 300 emails/day) or `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` / `SMTP_PASS` | your SMTP login (for Gmail: an *app password*) |
+| `MAIL_FROM` | `Project Management System <pms@yourcompany.com>` |
+| `APP_URL` | your Vercel URL, used in email links (defaults to the first `FRONTEND_URL`) |
+
+Attachments are stored in MongoDB Atlas (GridFS). The free M0 cluster has 512 MB, so keep an eye on usage if teams upload many large files.
+
 ## 7. Updating
 
 `git push` to `main` → Render and Vercel both redeploy automatically.

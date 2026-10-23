@@ -71,6 +71,11 @@ export default function LoginPage() {
         <Field label="Email" htmlFor="email" required error={formState.errors.email?.message}>
           <input id="email" type="email" autoComplete="email" className={cn(inputCls, formState.errors.email && 'border-red-400')} {...register('email')} />
         </Field>
+        <div className="flex justify-end -mb-3">
+          <Link href="/forgot-password" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <Field label="Password" htmlFor="password" required error={formState.errors.password?.message}>
           <input
             id="password"

@@ -10,6 +10,15 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, enum: APP_ROLES, default: 'User' },
     isActive: { type: Boolean, default: true },
+    emailVerified: { type: Boolean, default: false },
+    notifyByEmail: { type: Boolean, default: true },
+    // One-time tokens are stored as SHA-256 hashes, never in plain text.
+    verifyTokenHash: { type: String, default: null, select: false },
+    resetTokenHash: { type: String, default: null, select: false },
+    resetTokenExpires: { type: Date, default: null, select: false },
+    favorites: { type: [Schema.Types.ObjectId], ref: 'Project', default: [] },
+    /** Ordered list of dashboard widget ids the user has switched on (null = defaults). */
+    dashboardWidgets: { type: [String], default: undefined },
   },
   { timestamps: true },
 );
@@ -26,5 +35,9 @@ export function publicUser(user: UserDoc) {
     email: user.email,
     role: user.role as AppRole,
     isActive: user.isActive,
+    emailVerified: !!user.emailVerified,
+    notifyByEmail: user.notifyByEmail !== false,
+    favorites: (user.favorites ?? []).map(String),
+    dashboardWidgets: user.dashboardWidgets ?? null,
   };
 }

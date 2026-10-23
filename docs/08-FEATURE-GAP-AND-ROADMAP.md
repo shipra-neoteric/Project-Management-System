@@ -1,6 +1,6 @@
 # 08 — Feature Gap Analysis & Roadmap
 
-_Updated after Phase 2. Phase 1 is partly done: its data foundation (types, statuses, assignee, accountable, priority, category) was built because Phase 2 needs it. Comments, attachments, notifications, email and password reset are parked on the `phase-1-wip` branch._
+_Updated after Phases 1, 2 and 3 were completed._
 
 Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 dev) and our **Project Management System (PMS) v1**. The inventory comes from scanning OpenProject's 31 feature modules, ~150 permissions, ~170 data models and ~45 API endpoint groups, grouped into user-facing features.
 
@@ -9,10 +9,10 @@ Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 d
 | | Count |
 |---|---|
 | Features inventoried | **100** |
-| ✅ Done in PMS | **32** |
-| 🟡 Partially done | **10** |
-| ❌ Missing | **58** |
-| **Coverage today** (partial counts as half) | **37%** |
+| ✅ Done in PMS | **55** |
+| 🟡 Partially done | **5** |
+| ❌ Missing | **40** |
+| **Coverage today** (partial counts as half) | **58%** |
 
 **Where PMS is already ahead of OpenProject:** OpenProject schedules only with Finish-to-Start ("precedes/follows") links and has no critical path. PMS supports all four MS Project link types (FS/SS/FF/SF) and calculates the critical path and total slack, so for *scheduling* it is closer to MS Project than OpenProject is.
 
@@ -24,10 +24,10 @@ Phases are ordered by **leverage**: each one lays a foundation that later phases
 
 | Phase | Theme | Progress | Coverage after phase | Rough effort* |
 |---|---|---|---|---|
-| Now | Current PMS | — | **37%** | — |
-| 1 | Real team task management | 🟡 2/11 done | **46%** | 3-4 weeks |
-| 2 | Views, filters & interactive planning | ✅ Complete | **46%** | done |
-| 3 | Projects & portfolio | Planned | **58%** | 4-5 weeks |
+| Now | Current PMS | — | **58%** | — |
+| 1 | Real team task management | ✅ Complete | **58%** | done |
+| 2 | Views, filters & interactive planning | ✅ Complete | **58%** | done |
+| 3 | Projects & portfolio | ✅ Complete | **58%** | done |
 | 4 | Time, cost & budgets | Planned | **64%** | 3-4 weeks |
 | 5 | Resources & permissions | Planned | **73%** | 4-5 weeks |
 | 6 | Agile & collaboration | Planned | **84%** | 6-8 weeks |
@@ -40,25 +40,25 @@ Phases are ordered by **leverage**: each one lays a foundation that later phases
 
 ### Phase 1 — Real team task management
 
-Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **46%**.
+Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **58%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
 | Task types (Task, Bug, Feature, Epic, Phase...) | Work packages | ✅ Done | `type, types` |
-| Statuses & role-based workflows | Work packages | 🟡 Partial — Statuses done; role-based workflows pending | `status, workflow` |
+| Statuses & role-based workflows | Work packages | ✅ Done | `status, workflow` |
 | Assignee, accountable, priority, category | Work packages | ✅ Done | `work_package belongs_to` |
-| Comments & full change history (journal) | Work packages | ❌ Missing | `journal, journals` |
-| @mentions | Work packages | ❌ Missing | `notification reason: mentioned` |
-| File attachments | Work packages | ❌ Missing | `attachment` |
-| Watchers | Work packages | ❌ Missing | `watcher` |
-| In-app notifications | Collaboration | ❌ Missing | `notification` |
-| Email notifications (SMTP) | Collaboration | ❌ Missing | `mail_notifications` |
-| Activity stream | Collaboration | ❌ Missing | `activity` |
-| Password reset & email verification | Security & admin | ❌ Missing | `user_password, token` |
+| Comments & full change history (journal) | Work packages | ✅ Done | `journal, journals` |
+| @mentions | Work packages | ✅ Done | `notification reason: mentioned` |
+| File attachments | Work packages | ✅ Done | `attachment` |
+| Watchers | Work packages | ✅ Done | `watcher` |
+| In-app notifications | Collaboration | ✅ Done | `notification` |
+| Email notifications (SMTP) | Collaboration | ✅ Done | `mail_notifications` |
+| Activity stream | Collaboration | ✅ Done | `activity` |
+| Password reset & email verification | Security & admin | ✅ Done | `user_password, token` |
 
 ### Phase 2 — Views, filters & interactive planning
 
-One query engine powers table, board, calendar and search; the Gantt becomes drag-and-drop. Coverage after this phase: **46%**.
+One query engine powers table, board, calendar and search; the Gantt becomes drag-and-drop. Coverage after this phase: **58%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
@@ -80,20 +80,20 @@ Subprojects, templates, custom fields and portfolio dashboards for management. C
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
-| Baseline snapshot & slippage | Scheduling & Gantt | 🟡 Partial — OP compares against any past date | `timestamps / baseline compare` |
-| Custom fields on tasks | Work packages | ❌ Missing | `work_package_custom_field` |
-| Form configuration per type | Work packages | ❌ Missing | `form_configuration` |
-| Dashboard | Views & reporting | 🟡 Partial — PMS: fixed dashboard; OP: configurable widgets | `my_page, overviews` |
-| Charts & graph widgets | Views & reporting | ❌ Missing | `work_packages_graph` |
-| Archive projects | Projects & portfolio | 🟡 Partial — PMS: status only | `archive_project` |
-| Subprojects (project hierarchy) | Projects & portfolio | ❌ Missing | `add_subprojects` |
-| Portfolios & programs | Projects & portfolio | ❌ Missing | `add_portfolios, add_programs` |
-| Project templates & copy project | Projects & portfolio | ❌ Missing | `copy_projects` |
-| Project custom attributes | Projects & portfolio | ❌ Missing | `project_custom_field` |
-| Project phases & gates (lifecycle) | Projects & portfolio | ❌ Missing | `project_phases` |
-| Project list with saved filters & export | Projects & portfolio | 🟡 Partial — PMS: search + status filter | `project_queries, export_projects` |
-| Enable/disable modules per project | Projects & portfolio | ❌ Missing | `select_project_modules` |
-| Favorites | Projects & portfolio | ❌ Missing | `favorite` |
+| Baseline snapshot & slippage | Scheduling & Gantt | ✅ Done | `timestamps / baseline compare` |
+| Custom fields on tasks | Work packages | ✅ Done | `work_package_custom_field` |
+| Form configuration per type | Work packages | ✅ Done | `form_configuration` |
+| Dashboard | Views & reporting | ✅ Done | `my_page, overviews` |
+| Charts & graph widgets | Views & reporting | ✅ Done | `work_packages_graph` |
+| Archive projects | Projects & portfolio | ✅ Done | `archive_project` |
+| Subprojects (project hierarchy) | Projects & portfolio | ✅ Done | `add_subprojects` |
+| Portfolios & programs | Projects & portfolio | ✅ Done | `add_portfolios, add_programs` |
+| Project templates & copy project | Projects & portfolio | ✅ Done | `copy_projects` |
+| Project custom attributes | Projects & portfolio | ✅ Done | `project_custom_field` |
+| Project phases & gates (lifecycle) | Projects & portfolio | ✅ Done | `project_phases` |
+| Project list with saved filters & export | Projects & portfolio | ✅ Done | `project_queries, export_projects` |
+| Enable/disable modules per project | Projects & portfolio | ✅ Done | `select_project_modules` |
+| Favorites | Projects & portfolio | ✅ Done | `favorite` |
 
 ### Phase 4 — Time, cost & budgets
 
@@ -189,7 +189,7 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Critical path & total slack | ✅ Done | — | **PMS ahead of OpenProject.** | `(not in OpenProject)` |
 | Auto-scheduling across the whole plan | ✅ Done | — |  | `work_packages/schedule services` |
 | Working days & holidays | ✅ Done | — | PMS: per project; OP: global | `non_working_day, week_day` |
-| Baseline snapshot & slippage | 🟡 Partial | 3 | OP compares against any past date | `timestamps / baseline compare` |
+| Baseline snapshot & slippage | ✅ Done | 3 |  | `timestamps / baseline compare` |
 | Manual scheduling mode per task | ✅ Done | 2 |  | `schedule_manually` |
 | Drag & resize bars on the Gantt | ✅ Done | 2 |  | `frontend gantt` |
 | Non-scheduling relations (relates, blocks, duplicates, includes, requires) | ✅ Done | 2 |  | `relation.rb` |
@@ -202,20 +202,20 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 |---|---|---|---|---|
 | Task name, duration, dates, % complete, notes | ✅ Done | — |  | `work_package` |
 | Task types (Task, Bug, Feature, Epic, Phase...) | ✅ Done | 1 |  | `type, types` |
-| Statuses & role-based workflows | 🟡 Partial | 1 | Statuses done; role-based workflows pending | `status, workflow` |
+| Statuses & role-based workflows | ✅ Done | 1 |  | `status, workflow` |
 | Assignee, accountable, priority, category | ✅ Done | 1 |  | `work_package belongs_to` |
-| Comments & full change history (journal) | ❌ Missing | 1 |  | `journal, journals` |
-| @mentions | ❌ Missing | 1 |  | `notification reason: mentioned` |
-| File attachments | ❌ Missing | 1 |  | `attachment` |
-| Watchers | ❌ Missing | 1 |  | `watcher` |
-| Custom fields on tasks | ❌ Missing | 3 |  | `work_package_custom_field` |
+| Comments & full change history (journal) | ✅ Done | 1 |  | `journal, journals` |
+| @mentions | ✅ Done | 1 |  | `notification reason: mentioned` |
+| File attachments | ✅ Done | 1 |  | `attachment` |
+| Watchers | ✅ Done | 1 |  | `watcher` |
+| Custom fields on tasks | ✅ Done | 3 |  | `work_package_custom_field` |
 | Rich-text editor with macros | ❌ Missing | 6 |  | `editor (CKEditor)` |
 | Bulk edit, copy, move between projects | ✅ Done | 2 |  | `copy/move_work_packages` |
 | Readable IDs (e.g. PROJ-123) | ✅ Done | 2 |  | `semantic_identifier` |
 | Emoji reactions & internal comments | ❌ Missing | 6 |  | `emoji_reaction, internal comments` |
 | Share a task with outside people | ❌ Missing | 6 |  | `share_work_packages` |
 | Custom actions & automations | ❌ Missing | 8 |  | `custom_actions, automations` |
-| Form configuration per type | ❌ Missing | 3 |  | `form_configuration` |
+| Form configuration per type | ✅ Done | 3 |  | `form_configuration` |
 
 ### Views & reporting
 
@@ -227,8 +227,8 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Calendar view | ✅ Done | 2 |  | `modules/calendar` |
 | Team planner | ❌ Missing | 5 |  | `modules/team_planner` |
 | Global search | ✅ Done | 2 |  | `search_project` |
-| Dashboard | 🟡 Partial | 3 | PMS: fixed dashboard; OP: configurable widgets | `my_page, overviews` |
-| Charts & graph widgets | ❌ Missing | 3 |  | `work_packages_graph` |
+| Dashboard | ✅ Done | 3 |  | `my_page, overviews` |
+| Charts & graph widgets | ✅ Done | 3 |  | `work_packages_graph` |
 | CSV export | ✅ Done | — |  | `exports/csv` |
 | PDF report export | ✅ Done | — |  | `pdf_export` |
 | Native Excel (XLSX) export | ❌ Missing | 4 |  | `modules/xls_export` |
@@ -239,15 +239,15 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
 | Create/edit/delete projects, status | ✅ Done | — |  | `project` |
-| Archive projects | 🟡 Partial | 3 | PMS: status only | `archive_project` |
-| Subprojects (project hierarchy) | ❌ Missing | 3 |  | `add_subprojects` |
-| Portfolios & programs | ❌ Missing | 3 |  | `add_portfolios, add_programs` |
-| Project templates & copy project | ❌ Missing | 3 |  | `copy_projects` |
-| Project custom attributes | ❌ Missing | 3 |  | `project_custom_field` |
-| Project phases & gates (lifecycle) | ❌ Missing | 3 |  | `project_phases` |
-| Project list with saved filters & export | 🟡 Partial | 3 | PMS: search + status filter | `project_queries, export_projects` |
-| Enable/disable modules per project | ❌ Missing | 3 |  | `select_project_modules` |
-| Favorites | ❌ Missing | 3 |  | `favorite` |
+| Archive projects | ✅ Done | 3 |  | `archive_project` |
+| Subprojects (project hierarchy) | ✅ Done | 3 |  | `add_subprojects` |
+| Portfolios & programs | ✅ Done | 3 |  | `add_portfolios, add_programs` |
+| Project templates & copy project | ✅ Done | 3 |  | `copy_projects` |
+| Project custom attributes | ✅ Done | 3 |  | `project_custom_field` |
+| Project phases & gates (lifecycle) | ✅ Done | 3 |  | `project_phases` |
+| Project list with saved filters & export | ✅ Done | 3 |  | `project_queries, export_projects` |
+| Enable/disable modules per project | ✅ Done | 3 |  | `select_project_modules` |
+| Favorites | ✅ Done | 3 |  | `favorite` |
 
 ### Team & permissions
 
@@ -293,10 +293,10 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
-| In-app notifications | ❌ Missing | 1 |  | `notification` |
-| Email notifications (SMTP) | ❌ Missing | 1 |  | `mail_notifications` |
+| In-app notifications | ✅ Done | 1 |  | `notification` |
+| Email notifications (SMTP) | ✅ Done | 1 |  | `mail_notifications` |
 | Reminders & date alerts | ❌ Missing | 6 |  | `reminder, date_alert_*` |
-| Activity stream | ❌ Missing | 1 |  | `activity` |
+| Activity stream | ✅ Done | 1 |  | `activity` |
 | Meetings: agendas, outcomes, recurring, invites | ❌ Missing | 6 |  | `modules/meeting` |
 | Wiki | ❌ Missing | 6 |  | `modules/wikis` |
 | Documents | ❌ Missing | 6 |  | `modules/documents` |
@@ -321,7 +321,7 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
 | Email + password auth, JWT, rate limiting | ✅ Done | — |  | `authentication` |
-| Password reset & email verification | ❌ Missing | 1 |  | `user_password, token` |
+| Password reset & email verification | ✅ Done | 1 |  | `user_password, token` |
 | Two-factor authentication | ❌ Missing | 7 |  | `two_factor_authentication` |
 | SSO: OpenID Connect & SAML | ❌ Missing | 7 |  | `openid_connect, auth_saml` |
 | LDAP & SCIM user sync | ❌ Missing | 7 |  | `ldap_*, scim_client` |

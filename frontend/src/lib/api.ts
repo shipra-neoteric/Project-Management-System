@@ -95,3 +95,32 @@ export async function api<T>(path: string, options: { method?: Method; body?: un
 export function errorMessage(err: unknown, fallback = 'Something went wrong'): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
+
+/** Multipart upload with the same auth/error handling as `api()`. */
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the server. Check your connection and try again.');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, data?.error?.code ?? 'ERROR', data?.error?.message ?? `Upload failed (${res.status})`);
+  return data as T;
+}
+
+/** Downloads a protected file (Bearer token) and saves it with its original name. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, 'ERROR', 'Could not download the file');
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

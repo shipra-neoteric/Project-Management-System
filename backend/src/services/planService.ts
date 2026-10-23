@@ -9,7 +9,7 @@ import { schedule } from '../scheduling/scheduler';
 /** Fields persisted for each task (everything except identity/audit timestamps). */
 const PERSISTED_FIELDS = [
   'parent', 'order', 'name', 'duration', 'constraintStart', 'percentComplete', 'predecessors', 'resources', 'notes',
-  'type', 'status', 'priority', 'assignee', 'accountable', 'category', 'watchers', 'number', 'manual', 'relations', 'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
+  'type', 'status', 'priority', 'assignee', 'accountable', 'category', 'watchers', 'number', 'manual', 'relations', 'customValues', 'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
   'outlineLevel', 'rowNumber', 'updatedBy',
 ] as const;
 
@@ -121,6 +121,11 @@ export async function serializeProject(project: ProjectDoc, user: UserDoc) {
   await project.populate([
     { path: 'owner', select: 'name email' },
     { path: 'members.user', select: 'name email' },
+    { path: 'parent', select: 'name key kind' },
   ]);
-  return { ...project.toJSON(), myRole: roleFor(project, user) };
+  return {
+    ...project.toJSON(),
+    myRole: roleFor(project, user),
+    favorite: (user.favorites ?? []).some((f) => String(f) === String(project._id)),
+  };
 }

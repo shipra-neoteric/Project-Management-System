@@ -1,6 +1,13 @@
 'use client';
 
-import { CalendarRange, ClipboardList, GitBranch, Link2, Plus, StickyNote, Tag, Trash2, Users, X } from 'lucide-react';
+import { Bell, BellOff, CalendarRange, ClipboardList, GitBranch, Link2, ListPlus, Plus, StickyNote, Tag, Trash2, Users, X } from 'lucide-react';
+import { CustomFieldInput, isEmptyValue } from '@/components/ui/CustomFieldInput';
+import { FilterTabs } from '@/components/ui/Layout';
+import { useCommentMutations, useTaskActivity } from '@/features/queries';
+import { useAuth } from '@/lib/auth';
+import { atLeast } from '@/lib/status';
+import { isTransitionAllowed } from '@/lib/workflow';
+import { TaskActivityPanel, TaskFilesPanel } from './TaskPanels';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +42,7 @@ interface Draft {
   relations: { task: string; type: RelationType }[];
   resources: string[];
   notes: string;
+  customValues: Record<string, unknown>;
 }
 
 const LINK_OPTIONS = (Object.keys(LINK_LABELS) as LinkType[]).map((t) => ({ value: t, label: LINK_LABELS[t] }));
@@ -65,6 +73,7 @@ function toDraft(t: Task): Draft {
     relations: (t.relations ?? []).map((r) => ({ ...r })),
     resources: [...t.resources],
     notes: t.notes,
+    customValues: { ...(t.customValues ?? {}) },
   };
 }
 
@@ -82,6 +91,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
   const [draft, setDraft] = useState<Draft>(() => toDraft(task));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<'details' | 'activity' | 'files'>('details');
+  const { user } = useAuth();
+  const activity = useTaskActivity(projectId, task._id);
+  const { watch } = useCommentMutations(projectId, task._id);
+  const watching = (activity.data?.watchers ?? task.watchers ?? []).includes(user?._id ?? '');
 
   useEffect(() => setError(null), [task._id]);
 
@@ -100,6 +114,15 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
   const status = taskStatus(task, ctx.today);
   const people = [...ctx.people.values()].map((u) => ({ value: u._id, label: u.name }));
   const readOnly = !canEdit;
+  const role = plan.project.myRole;
+  const typeDef = draft.type ? ctx.types.get(draft.type) : undefined;
+  const hidden = new Set(typeDef?.hiddenFields ?? []);
+  const shown = (key: string) => !hidden.has(key);
+  const customFields = (workSettings?.customFields ?? []).filter((f) => f.scope === 'task' && shown(f._id));
+  // Only statuses the workflow allows from the task's current status.
+  const statusOptions = (workSettings?.statuses ?? [])
+    .filter((s) => isTransitionAllowed(workSettings?.workflow, role, task.status, s._id))
+    .map((s) => ({ value: s._id, label: s.name }));
 
   const save = async () => {
     setError(null);
@@ -111,6 +134,8 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
     if (!task.isSummary && (Number.isNaN(pct) || pct < 0 || pct > 100)) return setError('% complete must be between 0 and 100');
     if (draft.predecessors.some((p) => !p.task) || draft.relations.some((r) => !r.task)) return setError('Choose a task in every link row, or remove the empty row');
     if (draft.manual && !draft.constraintStart) return setError('Manually scheduled tasks need a start date');
+    const missing = customFields.filter((f) => f.required && isEmptyValue(draft.customValues[f._id])).map((f) => f.name);
+    if (missing.length) return setError(`Please fill in: ${missing.join(', ')}`);
 
     const patch: TaskPatch = {
       name,
@@ -124,6 +149,7 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
       predecessors: draft.predecessors.map((p) => ({ task: p.task, type: p.type, lag: Math.round(Number(p.lag) || 0) })),
       relations: draft.relations,
       resources: draft.resources,
+      customValues: Object.fromEntries(customFields.map((f) => [f._id, isEmptyValue(draft.customValues[f._id]) ? null : draft.customValues[f._id]])),
     };
     if (draft.type) patch.type = draft.type;
     if (draft.status) patch.status = draft.status;
@@ -164,7 +190,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
       title={task.name}
       subtitle={`${id ? `${id} · ` : ''}Row ${task.rowNumber} · WBS ${task.wbs}${task.isSummary ? ' · Summary task' : task.isMilestone ? ' · Milestone' : ''}`}
       footer={
-        canEdit ? (
+        tab !== 'details' ? (
+          <Button inDrawer onClick={onClose}>
+            Close
+          </Button>
+        ) : canEdit ? (
           <>
             <Button inDrawer variant="danger" icon={Trash2} className="mr-auto" onClick={remove}>
               Delete
@@ -183,6 +213,32 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
         )
       }
     >
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+        <FilterTabs<'details' | 'activity' | 'files'>
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { key: 'details', label: 'Details' },
+            { key: 'activity', label: 'Activity', count: activity.data?.activity.filter((a) => a.kind === 'comment').length },
+            { key: 'files', label: 'Files' },
+          ]}
+        />
+        <Button
+          inDrawer
+          size="sm"
+          icon={watching ? BellOff : Bell}
+          loading={watch.isPending}
+          onClick={() => watch.mutate(!watching)}
+          title={watching ? 'Stop getting notifications for this task' : 'Get notified about changes and comments'}
+        >
+          {watching ? 'Unwatch' : 'Watch'} · {(activity.data?.watchers ?? task.watchers ?? []).length}
+        </Button>
+      </div>
+      {tab === 'activity' ? (
+        <TaskActivityPanel projectId={projectId} taskId={task._id} people={[...ctx.people.values()]} canComment={canEdit} canModerate={atLeast(role, 'manager')} />
+      ) : tab === 'files' ? (
+        <TaskFilesPanel projectId={projectId} taskId={task._id} canEdit={canEdit} canModerate={atLeast(role, 'manager')} />
+      ) : (
       <div className="space-y-8">
         {error && <Alert>{error}</Alert>}
         {readOnly && <Alert tone="info">You have view-only access to this project.</Alert>}
@@ -219,12 +275,12 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
               <ThemedSelect options={(workSettings?.types ?? []).map((t) => ({ value: t._id, label: t.name }))} value={draft.type} disabled={readOnly} onChange={(v) => set('type', v)} />
             </Field>
             <Field label="Status" hint={ctx.statuses.get(draft.status)?.isClosed ? 'Closed statuses set the task to 100% complete' : undefined}>
-              <ThemedSelect options={(workSettings?.statuses ?? []).map((s) => ({ value: s._id, label: s.name }))} value={draft.status} disabled={readOnly} onChange={(v) => set('status', v)} />
+              <ThemedSelect options={statusOptions} value={draft.status} disabled={readOnly} onChange={(v) => set('status', v)} />
             </Field>
-            <Field label="Priority">
+            {shown('priority') && <Field label="Priority">
               <ThemedSelect options={PRIORITY_OPTIONS} value={draft.priority} disabled={readOnly} onChange={(v) => set('priority', v as Priority)} />
-            </Field>
-            <Field label="Category">
+            </Field>}
+            {shown('category') && <Field label="Category">
               <ThemedSelect
                 options={[{ value: '', label: 'No category' }, ...[...ctx.categories.entries()].map(([value, label]) => ({ value, label }))]}
                 value={draft.category}
@@ -232,7 +288,7 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
                 placeholder={ctx.categories.size === 0 ? 'Add categories in project settings' : 'Select…'}
                 onChange={(v) => set('category', v)}
               />
-            </Field>
+            </Field>}
           </div>
         </section>
 
@@ -242,10 +298,10 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
             <Field label="Assignee" hint="Who does the work">
               <ThemedSelect options={[{ value: '', label: 'Unassigned' }, ...people]} value={draft.assignee} disabled={readOnly} searchable onChange={(v) => set('assignee', v)} />
             </Field>
-            <Field label="Accountable" hint="Who answers for the result">
+            {shown('accountable') && <Field label="Accountable" hint="Who answers for the result">
               <ThemedSelect options={[{ value: '', label: 'Nobody' }, ...people]} value={draft.accountable} disabled={readOnly} searchable onChange={(v) => set('accountable', v)} />
-            </Field>
-            <div className="sm:col-span-2">
+            </Field>}
+            {shown('resources') && <div className="sm:col-span-2">
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Resources</p>
               {resources.length === 0 ? (
                 <p className="text-sm text-gray-400 dark:text-gray-500">No resources yet. Add them on the Resources tab.</p>
@@ -278,9 +334,28 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
                   })}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         </section>
+
+        {customFields.length > 0 && (
+          <section>
+            <Sec title="Additional fields" icon={ListPlus} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {customFields.map((f) => (
+                <Field key={f._id} label={f.name} htmlFor={`cf-${f._id}`} required={f.required} hint={f.description || undefined} className={f.kind === 'longtext' || f.kind === 'multiselect' ? 'sm:col-span-2' : undefined}>
+                  <CustomFieldInput
+                    field={f}
+                    value={draft.customValues[f._id]}
+                    people={[...ctx.people.values()]}
+                    disabled={readOnly}
+                    onChange={(v) => set('customValues', { ...draft.customValues, [f._id]: v })}
+                  />
+                </Field>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section>
           <Sec title="Schedule" icon={CalendarRange} />
@@ -370,7 +445,7 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
           )}
         </section>
 
-        <section>
+        {shown('relations') && <section>
           <Sec title="Related tasks (no scheduling effect)" icon={GitBranch} />
           <div className="space-y-3">
             {draft.relations.map((rel, i) => (
@@ -400,12 +475,12 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
               Add relation
             </Button>
           )}
-        </section>
+        </section>}
 
-        <section>
+        {shown('notes') && <section>
           <Sec title="Notes" icon={StickyNote} />
           <textarea rows={4} className={textareaCls} value={draft.notes} disabled={readOnly} onChange={(e) => set('notes', e.target.value)} placeholder="Details, links, acceptance criteria…" aria-label="Notes" />
-        </section>
+        </section>}
 
         {task.baselineStart && (
           <section>
@@ -416,6 +491,7 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
           </section>
         )}
       </div>
+      )}
     </Drawer>
   );
 }

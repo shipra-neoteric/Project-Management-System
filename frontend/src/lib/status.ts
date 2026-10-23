@@ -35,3 +35,14 @@ export const MEMBER_ROLES: MemberRole[] = ['manager', 'member', 'viewer'];
 
 const RANK: Record<ProjectRole, number> = { viewer: 1, member: 2, manager: 3, owner: 4 };
 export const atLeast = (role: ProjectRole | undefined, min: ProjectRole) => !!role && RANK[role] >= RANK[min];
+
+export const KIND_LABEL: Record<'project' | 'program' | 'portfolio', string> = { project: 'Project', program: 'Program', portfolio: 'Portfolio' };
+
+export const MODULE_LABELS: Record<string, string> = {
+  gantt: 'Gantt chart',
+  table: 'Table',
+  board: 'Board',
+  calendar: 'Calendar',
+  resources: 'Resources',
+  activity: 'Activity',
+};

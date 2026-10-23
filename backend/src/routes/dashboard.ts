@@ -7,16 +7,22 @@ import { addDays, todayISO } from '../scheduling/calendar';
 export const dashboardRouter = Router();
 
 dashboardRouter.get('/', async (req, res) => {
-  const projects = await Project.find({ ...accessFilter(req.user!), status: { $ne: 'archived' } })
-    .select('name')
+  const projects = await Project.find({ ...accessFilter(req.user!), status: { $ne: 'archived' }, isTemplate: { $ne: true } })
+    .select('name key')
     .lean();
   const projectIds = projects.map((p) => p._id);
   const names = new Map(projects.map((p) => [p._id.toString(), p.name]));
   const today = todayISO();
 
   const leaves = await Task.find({ project: { $in: projectIds }, isSummary: false })
-    .select('project name start finish duration percentComplete isMilestone isCritical rowNumber')
+    .select('project name start finish duration percentComplete isMilestone isCritical rowNumber status assignee priority number')
     .lean();
+  const tally = (values: string[]) => {
+    const m = new Map<string, number>();
+    for (const v of values) m.set(v, (m.get(v) ?? 0) + 1);
+    return [...m.entries()].map(([value, count]) => ({ value, count }));
+  };
+  const me = String(req.user!._id);
 
   const withProject = <T extends { project: unknown }>(t: T) => ({ ...t, projectName: names.get(String(t.project)) ?? '' });
   const open = leaves.filter((t) => t.percentComplete < 100);
@@ -40,5 +46,12 @@ dashboardRouter.get('/', async (req, res) => {
     },
     upcomingMilestones: milestones.slice(0, 10).map(withProject),
     overdueTasks: overdue.slice(0, 10).map(withProject),
+    myTasks: open
+      .filter((t) => String(t.assignee) === me)
+      .sort((a, b) => (a.finish || '').localeCompare(b.finish || ''))
+      .slice(0, 15)
+      .map(withProject),
+    statusCounts: tally(open.map((t) => (t.status ? String(t.status) : ''))),
+    assigneeCounts: tally(open.map((t) => (t.assignee ? String(t.assignee) : ''))),
   });
 });

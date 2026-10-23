@@ -8,6 +8,14 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  // Optional — without SMTP, emails are printed to the server log instead of being sent.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default('Project Management System <no-reply@example.com>'),
+  /** Public URL of the frontend, used in email links. Defaults to the first FRONTEND_URL. */
+  APP_URL: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -17,10 +25,14 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+const allowedOrigins = parsed.data.FRONTEND_URL.split(',')
+  .map((o) => o.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 export const env = {
   ...parsed.data,
   isProduction: parsed.data.NODE_ENV === 'production',
-  allowedOrigins: parsed.data.FRONTEND_URL.split(',')
-    .map((o) => o.trim().replace(/\/$/, ''))
-    .filter(Boolean),
+  allowedOrigins,
+  appUrl: (parsed.data.APP_URL ?? allowedOrigins[0] ?? 'http://localhost:3000').replace(/\/$/, ''),
+  smtpConfigured: !!parsed.data.SMTP_HOST,
 };

@@ -1,6 +1,6 @@
 import { Schema, model } from 'mongoose';
 
-export const VIEW_KINDS = ['gantt', 'table', 'board', 'calendar'] as const;
+export const VIEW_KINDS = ['gantt', 'table', 'board', 'calendar', 'projects'] as const;
 
 /**
  * A saved view of a project's tasks: filters, sorting, grouping and columns.
@@ -8,7 +8,8 @@ export const VIEW_KINDS = ['gantt', 'table', 'board', 'calendar'] as const;
  */
 const viewSchema = new Schema(
   {
-    project: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
+    /** null for organisation-level views (kind "projects" = saved project lists). */
+    project: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true, trim: true, maxlength: 80 },
     kind: { type: String, enum: VIEW_KINDS, required: true },

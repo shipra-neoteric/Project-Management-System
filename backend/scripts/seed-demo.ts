@@ -1,11 +1,15 @@
 /**
- * Creates a realistic sample project through the public API (works locally or against Render).
+ * Creates realistic demo data through the public API (works locally or against the live Render API):
+ * a program with two projects (Gantt plan, statuses, categories, resources, baseline, life cycle,
+ * comment) and a project template. Remove it again with `npm run seed:cleanup`.
  *
  *   npm run seed:demo -- <apiUrl> <email> <password> [name]
- *   npm run seed:demo -- http://localhost:4000/api admin@example.com Password123 "Demo Admin"
+ *   npm run seed:demo -- https://your-api.onrender.com/api you@company.com YourPassword "Your Name"
  *
- * Signs in (or registers the account if it doesn't exist yet), then builds the plan.
+ * Signs in with the account (registers it only if the email is not taken yet), then builds the data.
  */
+import { DEMO_PROJECTS } from './demo-names';
+
 type Plan = { tasks: { _id: string; name: string }[]; createdTaskId?: string };
 
 const [apiUrl = 'http://localhost:4000/api', email = 'admin@example.com', password = 'Password123', name = 'Demo Admin'] = process.argv.slice(2);
@@ -32,11 +36,17 @@ async function main() {
   try {
     token = (await call<{ token: string }>('/auth/login', 'POST', { email, password })).token;
   } catch {
-    token = (await call<{ token: string }>('/auth/register', 'POST', { name, email, password })).token;
+    // Only register when the email is free; a wrong password for an existing account stops here.
+    try {
+      token = (await call<{ token: string }>('/auth/register', 'POST', { name, email, password })).token;
+      console.log(`Registered a new account for ${email}`);
+    } catch {
+      throw new Error(`Could not sign in as ${email}. Check the email and password (the account already exists).`);
+    }
   }
 
   const { project } = await call<{ project: { _id: string } }>('/projects', 'POST', {
-    name: 'Corporate Office Fit-out',
+    name: DEMO_PROJECTS.fitOut,
     description: 'Interior fit-out of the 4th floor: design, approvals, civil works, MEP, furniture and handover.',
     startDate: nextMonday(),
   });
@@ -115,14 +125,75 @@ async function main() {
     });
   }
 
-  await call(`${base}/baseline`, 'POST');
+  await call(`${base}/baselines`, 'POST', { name: 'Approved plan' });
+
+  // Phase 3: a program containing this project, a life cycle with gates, a template and a favorite.
+  const start = nextMonday();
+  const { project: program } = await call<{ project: { _id: string } }>('/projects', 'POST', {
+    name: DEMO_PROJECTS.program,
+    description: 'All office fit-out and refurbishment projects for FY 2026-27.',
+    startDate: start,
+    kind: 'program',
+  });
+  const wsPhases = await call<{ phases: { _id: string }[] }>('/work-settings');
+  const day = (n: number) => new Date(Date.parse(`${start}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  await call(base, 'PATCH', {
+    parent: program._id,
+    lifecycle: wsPhases.phases.slice(0, 4).map((p, i) => ({
+      definition: p._id,
+      start: day(i * 12),
+      finish: day(i * 12 + 11),
+      gateStatus: i === 0 ? 'passed' : 'pending',
+    })),
+  });
+  await call(`/projects/${project._id}/favorite`, 'POST');
+  await call(`/projects/${program._id}/favorite`, 'POST');
+  await call(`${base}/tasks/${ids['Detailed drawings']}/comments`, 'POST', {
+    text: `Client asked for an extra meeting room on level 4 — drawings will take two more days. @[${name}](${me.user._id}) FYI`,
+  });
+  await call(`/projects/${project._id}/copy`, 'POST', {
+    name: DEMO_PROJECTS.template,
+    startDate: start,
+    isTemplate: true,
+    copy: { tasks: true, resources: false, members: false, views: true },
+  });
   // Slip one task after the baseline so the comparison is visible.
   await call(`${base}/tasks/${ids['Detailed drawings']}`, 'PATCH', { duration: 8 });
 
-  console.log(`Done. Sign in as ${email} and open "Corporate Office Fit-out".`);
+  // A second, smaller project in the program so the portfolio roll-up has something to compare.
+  const { project: lobby } = await call<{ project: { _id: string } }>('/projects', 'POST', {
+    name: DEMO_PROJECTS.lobby,
+    description: 'Refresh of the ground-floor reception: new desk, flooring, lighting and signage.',
+    startDate: day(7),
+    parent: program._id,
+  });
+  const lobbyBase = `/projects/${lobby._id}`;
+  const lobbyPlan: [string, number, number][] = [
+    ['Design brief', 3, 100],
+    ['Furniture & finishes selection', 5, 60],
+    ['Strip-out', 2, 0],
+    ['Flooring & lighting', 6, 0],
+    ['Reception desk installation', 3, 0],
+    ['Signage & handover', 0, 0],
+  ];
+  let previous: string | null = null;
+  for (const [taskName, duration, pct] of lobbyPlan) {
+    const created = await call<Plan>(`${lobbyBase}/tasks`, 'POST', { name: taskName, duration });
+    const taskId = created.createdTaskId!;
+    await call(`${lobbyBase}/tasks/${taskId}`, 'PATCH', {
+      percentComplete: pct,
+      assignee: me.user._id,
+      status: pct >= 100 ? statusId('Closed') : pct > 0 ? statusId('In progress') : statusId('New'),
+      predecessors: previous ? [{ task: previous, type: 'FS', lag: 0 }] : [],
+    });
+    previous = taskId;
+  }
+
+  console.log(`Done. Sign in as ${email}: open "${DEMO_PROJECTS.program}" or "${DEMO_PROJECTS.fitOut}".`);
+  console.log('Remove the demo data later with: npm run seed:cleanup -- <apiUrl> <email> <password> --yes');
 }
 
 main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
+  process.exitCode = 1;
 });

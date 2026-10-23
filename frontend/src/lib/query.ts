@@ -1,4 +1,4 @@
-import type { Project, Resource, Status, Task, TaskType, UserRef, ViewConfig, ViewFilter } from './types';
+import type { CustomField, Project, Resource, Status, Task, TaskType, UserRef, ViewConfig, ViewFilter } from './types';
 
 /**
  * Client-side query engine shared by the Gantt, table, board and calendar views.
@@ -257,4 +257,62 @@ export function groupRows(rows: Task[], field: string | null, ctx: QueryContext)
     groups.get(key)!.tasks.push(t);
   }
   return [...groups.values()];
+}
+
+// ---- Custom fields ---------------------------------------------------------------------------
+
+export const customKey = (id: string) => `cf:${id}`;
+
+/** Formats a custom field value for display (tables, exports, drawers). */
+export function formatCustomValue(field: CustomField, value: unknown, people?: Map<string, UserRef>): string {
+  if (value === undefined || value === null || value === '') return '';
+  const option = (id: unknown) => field.options.find((o) => o._id === id)?.name ?? '';
+  switch (field.kind) {
+    case 'select':
+      return option(value);
+    case 'multiselect':
+      return (Array.isArray(value) ? value : []).map(option).filter(Boolean).join(', ');
+    case 'boolean':
+      return value ? 'Yes' : 'No';
+    case 'user':
+      return people?.get(String(value))?.name ?? '';
+    default:
+      return String(value);
+  }
+}
+
+/**
+ * Registers the organisation's task custom fields as query-engine fields (keys `cf:<id>`), so they
+ * work in filters, columns, sorting and grouping everywhere. Called whenever the catalog loads.
+ */
+export function syncCustomFields(fields: CustomField[]) {
+  for (let i = FIELDS.length - 1; i >= 0; i--) if (FIELDS[i].key.startsWith('cf:')) FIELDS.splice(i, 1);
+  for (const key of [...FIELD_MAP.keys()]) if (key.startsWith('cf:')) FIELD_MAP.delete(key);
+  for (const f of fields.filter((x) => x.scope === 'task')) {
+    const kind: FieldKind =
+      f.kind === 'select' || f.kind === 'multiselect' || f.kind === 'user' ? 'enum' : f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : f.kind === 'boolean' ? 'bool' : 'text';
+    const def: FieldDef = {
+      key: customKey(f._id),
+      label: f.name,
+      kind,
+      value: (t) => {
+        const v = t.customValues?.[f._id];
+        if (kind === 'enum') return Array.isArray(v) ? (v as string[]) : v == null ? '' : String(v);
+        if (kind === 'bool') return v === true;
+        return (v as string | number | undefined) ?? null;
+      },
+      display: (t, c) => formatCustomValue(f, t.customValues?.[f._id], c.people),
+      options:
+        f.kind === 'user'
+          ? (c) => [...c.people.values()].map((u) => ({ value: u._id, label: u.name }))
+          : f.kind === 'select' || f.kind === 'multiselect'
+            ? () => f.options.map((o) => ({ value: o._id, label: o.name }))
+            : undefined,
+      groupable: f.kind === 'select' || f.kind === 'user' || f.kind === 'boolean',
+      sortable: f.kind !== 'multiselect' && f.kind !== 'longtext',
+      width: 140,
+    };
+    FIELDS.push(def);
+    FIELD_MAP.set(def.key, def);
+  }
 }

@@ -121,6 +121,19 @@ Seeded automatically on first start; items in use by tasks cannot be deleted.
 | `isPublic` | boolean | shared with the whole project (managers only) |
 | `config` | `{ filters[], search, sort[], groupBy, columns[], options }` | interpreted by the frontend query engine |
 
+## Phase 1 & 3 collections
+
+| Collection | Purpose | Key fields |
+|---|---|---|
+| `journals` | Task history and comments | `project`, `task`, `taskName`, `user`, `kind` (`created`/`change`/`comment`/`deleted`/`attachment`), `text`, `changes[{field,label,from,to}]` (display strings), `mentions[]`, `editedAt` |
+| `notifications` | In-app notifications | `recipient`, `actor`, `project`, `projectName`, `task`, `taskName`, `journal`, `reason`, `summary`, `read` |
+| `attachments` + GridFS bucket `attachments` | Task files | `project`, `task`, `fileId`, `filename`, `contentType`, `size`, `uploadedBy` |
+| `customfields` | Admin-defined fields | `name`, `scope` (`task`/`project`), `kind`, `options[{_id,name}]`, `required`, `position`, `description` |
+| `phasedefinitions` | Life-cycle phases | `name`, `color`, `gate`, `position` |
+| `baselines` | Named plan snapshots | `project`, `name`, `createdBy`, `finishDate`, `tasks[{task,start,finish}]` |
+
+New fields: **users** `emailVerified`, `notifyByEmail`, `favorites[]`, `dashboardWidgets[]`, hashed one-time `verifyTokenHash` / `resetTokenHash` (+ `resetTokenExpires`) · **projects** `kind`, `parent`, `isTemplate`, `disabledModules[]`, `lifecycle[{definition,start,finish,gateStatus}]`, `customValues` · **tasks** `watchers[]`, `customValues` · **tasktypes** `hiddenFields[]` · **settings** `workflow` (role → from status → allowed statuses) · **views** `project` may be null for saved project lists (`kind: 'projects'`).
+
 ## Relationships
 
 ```

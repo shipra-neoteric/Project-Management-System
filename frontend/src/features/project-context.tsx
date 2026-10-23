@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { OPEN_TASK_EVENT } from '@/components/layout/GlobalSearch';
 import { usePlan, useResources, useWorkSettings } from '@/features/queries';
 import { todayISO } from '@/lib/dates';
-import type { QueryContext } from '@/lib/query';
+import { syncCustomFields, type QueryContext } from '@/lib/query';
 import { atLeast } from '@/lib/status';
 import type { Plan, Resource, Task, UserRef, WorkSettings } from '@/lib/types';
 
@@ -63,6 +63,7 @@ export function ProjectWorkspaceProvider({ projectId, children }: { projectId: s
 
   const ctx = useMemo<QueryContext | null>(() => {
     if (!project || !workSettings.data) return null;
+    syncCustomFields(workSettings.data.customFields ?? []);
     const people = new Map<string, UserRef>();
     if (project.owner) people.set(project.owner._id, project.owner);
     for (const m of project.members) if (m.user) people.set(m.user._id, m.user);

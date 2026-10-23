@@ -47,6 +47,8 @@ const taskSchema = new Schema(
     manual: { type: Boolean, default: false },
     /** Non-scheduling relations to other tasks in the same project. */
     relations: { type: [relationSchema], default: [] },
+    /** Admin-defined custom field values: { [customFieldId]: value } */
+    customValues: { type: Schema.Types.Mixed, default: {} },
     baselineStart: { type: String, default: null },
     baselineFinish: { type: String, default: null },
     // Computed by the scheduler
@@ -91,6 +93,7 @@ export interface PlanTask {
   number: number | null;
   manual: boolean;
   relations: { task: Types.ObjectId; type: RelationType }[];
+  customValues: Record<string, unknown>;
   baselineStart: string | null;
   baselineFinish: string | null;
   start: string;

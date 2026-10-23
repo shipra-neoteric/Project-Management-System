@@ -15,6 +15,11 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Replace the cached user (after profile changes, verification, favorites…). */
+  setUser: (user: User) => void;
+  refreshUser: () => Promise<void>;
+  /** Store a token + user returned by e.g. the reset-password endpoint. */
+  signIn: (data: { token: string; user: User }) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -69,9 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace('/login');
   }, [queryClient, router]);
 
+  const refreshUser = useCallback(async () => {
+    const { user: fresh } = await api<{ user: User }>('/auth/me');
+    setUser(fresh);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, status, isAdmin: user?.role === 'Admin', login, register, logout }),
-    [user, status, login, register, logout],
+    () => ({ user, status, isAdmin: user?.role === 'Admin', login, register, logout, setUser, refreshUser, signIn: handleAuth }),
+    [user, status, login, register, logout, refreshUser, handleAuth],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

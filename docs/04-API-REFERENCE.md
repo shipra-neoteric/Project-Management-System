@@ -91,6 +91,39 @@ Task create/update also accept `type`, `status`, `priority`, `assignee`, `accoun
 ## Search
 `GET /search?q=…` (min 2 chars) → `{ projects: [...], tasks: [{ ..., projectName, projectKey }] }` across accessible projects. Matches names, notes, project keys and IDs like `OF-12`.
 
+## Phase 1 — accounts, collaboration, notifications
+| Method | Path | Notes |
+|---|---|---|
+| PATCH | `/auth/me` | `{ name?, notifyByEmail?, dashboardWidgets? }` |
+| POST | `/auth/change-password` | `{ currentPassword, newPassword }` |
+| POST | `/auth/forgot-password` | `{ email }` — always 200 |
+| POST | `/auth/reset-password` | `{ token, password }` → `{ token, user }` |
+| POST | `/auth/verify-email` · `/auth/resend-verification` | email confirmation |
+| GET | `/projects/:id/tasks/:taskId/activity` | history + comments + `watchers` (viewer) |
+| POST / PATCH / DELETE | `/projects/:id/tasks/:taskId/comments[/:journalId]` | `{ text }` with `@[Name](userId)` mentions (member; edit = author, delete = author or manager) |
+| POST / DELETE | `/projects/:id/tasks/:taskId/watch` | watch / unwatch (viewer) |
+| GET / POST | `/projects/:id/tasks/:taskId/attachments` | list / upload (`multipart/form-data`, field `file`, ≤ 10 MB) |
+| GET / DELETE | `/projects/:id/tasks/:taskId/attachments/:attachmentId` | download (`Content-Disposition: attachment`) / delete (uploader or manager) |
+| GET | `/projects/:id/activity?before=&limit=` | project activity stream |
+| GET | `/notifications?unread=1&limit=` · `/notifications/count` | |
+| POST | `/notifications/read` | `{ ids?, all?, read? }` |
+| PUT | `/work-settings/workflow` | Admin: `{ manager: {from: [to]} \| null, member: … }` |
+
+## Phase 3 — portfolio, templates, custom fields
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/projects` | also `{ kind, parent, isTemplate, fromProject, copy: { tasks, resources, members, views } }` |
+| PATCH | `/projects/:id` | also `{ kind, parent, isTemplate, disabledModules, lifecycle, customValues }`; archived projects accept only `status` |
+| POST | `/projects/:id/copy` | `{ name, startDate, parent?, isTemplate?, copy }` (manager; templates: anyone who can see them) |
+| GET | `/projects/:id/overview` | roll-up, sub-projects, counts by status/type/priority/assignee, milestones, recent activity |
+| POST / DELETE | `/projects/:id/favorite` | |
+| GET / POST | `/projects/:id/baselines` | list / create `{ name }` (manager) |
+| GET / DELETE | `/projects/:id/baselines/:baselineId` | snapshot with task dates / delete |
+| GET / POST / PATCH / DELETE | `/project-views[/:viewId]` | saved project lists (shared lists: admins) |
+| POST / PATCH / DELETE | `/work-settings/custom-fields[/:id]`, `/work-settings/phases[/:id]` | Admin; types also accept `hiddenFields` |
+
+`GET /projects` now returns `kind`, `parent`, `isTemplate`, `favorite` and a `rollup` per project. Templates are visible to everyone (as viewer). Any write to an archived project returns 403.
+
 ## Resources
 | Method | Path | Min role | Body |
 |---|---|---|---|

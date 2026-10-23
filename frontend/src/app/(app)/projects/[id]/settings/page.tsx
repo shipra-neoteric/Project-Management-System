@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, CalendarDays, Info, Pencil, Plus, ShieldAlert, Tags, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { CalendarDays, Info, Pencil, Plus, ShieldAlert, Tags, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -10,8 +10,9 @@ import { Field, inputCls } from '@/components/ui/Field';
 import { Card, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
-import { useBaseline, useDeleteProject, useMembers, useProject, useUpdateProject, useUsers } from '@/features/queries';
-import { confirmAction, confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
+import { AttributesCard, BaselinesCard, CopyCard, LifecycleCard, ModulesCard } from '@/features/ProjectSettingsCards';
+import { useDeleteProject, useMembers, useProject, useUpdateProject, useUsers } from '@/features/queries';
+import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fmtDate, fmtDateTime, WEEKDAY_NAMES } from '@/lib/dates';
@@ -60,7 +61,11 @@ export default function ProjectSettingsPage() {
       <CalendarCard project={project} canManage={canManage} />
       <CategoriesCard project={project} canManage={canManage} />
       <MembersCard project={project} canManage={canManage} />
-      <BaselineCard project={project} canManage={canManage} />
+      <AttributesCard project={project} canManage={canManage} people={[project.owner, ...project.members.filter((m) => m.user).map((m) => m.user)]} />
+      <LifecycleCard project={project} canManage={canManage} />
+      <BaselinesCard project={project} canManage={canManage} />
+      <ModulesCard project={project} canManage={canManage} />
+      <CopyCard project={project} canManage={canManage} />
       {project.myRole === 'owner' && <DangerZone project={project} />}
 
       <ProjectDrawer open={editOpen} project={project} onClose={() => setEditOpen(false)} />
@@ -329,56 +334,6 @@ function MembersCard({ project, canManage }: { project: Project; canManage: bool
         </table>
       </div>
       {project.members.length === 0 && <p className="px-5 py-4 text-sm text-gray-400 dark:text-gray-500">Only the owner has access. Add teammates to collaborate.</p>}
-    </Card>
-  );
-}
-
-function BaselineCard({ project, canManage }: { project: Project; canManage: boolean }) {
-  const baseline = useBaseline(project._id);
-  const { themeColor } = useTheme();
-  const run = async (action: 'set' | 'clear') => {
-    const ok =
-      action === 'set'
-        ? await confirmAction(
-            project.baselineSavedAt ? 'Replace the baseline?' : 'Save a baseline?',
-            "Today's planned dates of every task are saved so you can compare them with actual progress later.",
-            'Save baseline',
-            themeColor,
-          )
-        : await confirmDanger('Clear the baseline?', 'Saved baseline dates will be removed from every task.', 'Clear');
-    if (!ok) return;
-    try {
-      await baseline.mutateAsync(action);
-      void toastSuccess(action === 'set' ? 'Baseline saved' : 'Baseline cleared');
-    } catch (err) {
-      void toastError(errorMessage(err));
-    }
-  };
-
-  return (
-    <Card title="Baseline" icon={BarChart3}>
-      <div className="p-5 space-y-4">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          A baseline is a snapshot of the original plan. Turn on <span className="font-medium">Show baseline</span> on the Gantt chart to see slippage.
-        </p>
-        {project.baselineSavedAt ? (
-          <Alert tone="success">Baseline saved {fmtDateTime(project.baselineSavedAt)}</Alert>
-        ) : (
-          <Alert tone="info">No baseline has been saved yet.</Alert>
-        )}
-        {canManage && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="primary" icon={BarChart3} loading={baseline.isPending} onClick={() => run('set')}>
-              {project.baselineSavedAt ? 'Update baseline' : 'Set baseline'}
-            </Button>
-            {project.baselineSavedAt && (
-              <Button variant="danger" onClick={() => run('clear')}>
-                Clear
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
     </Card>
   );
 }

@@ -102,6 +102,35 @@ Global search in the header (Ctrl/⌘+K) across every project you can access: pr
 ### W14 — Related tasks (Phase 2)
 Besides scheduling links, tasks can be related without affecting dates: *relates to*, *blocks / blocked by*, *duplicates*, *includes / part of*, *requires*.
 
+### W15 — Collaborate on tasks (Phase 1)
+- **History:** every create, change, delete, comment and file upload on a task is recorded with who, when and the old → new value.
+- **Comments** with **@mentions** (type `@` to pick a project member). Authors can edit their comments; managers can delete any.
+- **Attachments:** up to 10 MB per file, stored in MongoDB (GridFS). Files always download (never open inline) for safety.
+- **Watchers:** creators, assignees and commenters watch a task automatically; anyone can Watch / Unwatch.
+- **Notifications:** a bell with unread count and a notifications page. Reasons: mentioned, assigned, accountable, commented, updated. Also sent by **email** when SMTP is configured (each person can switch email off in their profile).
+- **Activity stream:** a project-wide Activity tab (filter by comments, changes, files).
+
+### W16 — Accounts (Phase 1)
+Forgot-password email with a one-hour, single-use link · email confirmation after registration (banner until confirmed) · profile page (name, change password, email preference).
+
+### W17 — Status workflow (Phase 1)
+Admins decide, per project role (Manager / Member), which status changes are allowed (e.g. members may go New → In progress but not → Closed). Owners and admins are never restricted. Enforced on the server; the task form only offers allowed statuses.
+
+### W18 — Portfolios, programs and sub-projects (Phase 3)
+Each project is a **Project**, **Program** or **Portfolio** and can sit inside another. Programs and portfolios **roll up** progress, task counts, overdue counts and dates from everything beneath them. Every project has an **Overview** tab: key figures, description and attributes, life cycle, tasks-by-status / workload / tasks-by-type charts, sub-projects, upcoming milestones and recent activity.
+
+### W19 — Templates and copies (Phase 3)
+Tick **Use as a template** on any project; everyone can then start a new project from it. Copies bring the plan (tasks, links, custom values), resources, categories, shared views and optionally team members. Fixed dates move with the new start date.
+
+### W20 — Custom fields and forms (Phase 3)
+Admins add custom fields for **tasks** or **projects**: text, long text, number, date, list (single/multi), yes/no, person. They appear in the task drawer / project settings, and task fields work in every filter, column, sort and group-by. Each task **type** chooses which optional fields its form shows (e.g. hide Resources on Risks).
+
+### W21 — Life cycle and gates (Phase 3)
+Admins define phases (default: Initiating, Planning, Executing, Closing), each with an optional gate. Managers plan phase dates per project and record gate decisions (Pending / Passed / Failed), shown as a timeline on the Overview.
+
+### W22 — More Phase 3 tools
+**Favorites** (star projects; shown in the sidebar and dashboard) · **saved project lists** with columns, filters and Excel export · **modules** per project (hide Gantt/Table/Board/Calendar/Resources/Activity tabs) · **archiving** makes a project read-only until reactivated · **multiple named baselines**, any of which can be compared on the Gantt · **configurable dashboard** (choose and reorder widgets: key figures, my tasks, favorites, status and workload charts, portfolio, milestones, overdue).
+
 ## 3. Out of scope for v1 (possible later phases)
 Cost/budget tracking, timesheets, file attachments, comments/chat, email notifications, MS Project (.mpp/.xml) import, hour-level scheduling, resource leveling, SSO with Nexora, real-time websockets.
 
