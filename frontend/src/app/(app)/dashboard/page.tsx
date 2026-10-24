@@ -34,7 +34,7 @@ const WIDGETS = {
   myTime: { label: 'My time this week', wide: false },
 } as const;
 type WidgetId = keyof typeof WIDGETS;
-const DEFAULT_WIDGETS: WidgetId[] = ['kpis', 'myTasks', 'favorites', 'statusChart', 'workloadChart', 'portfolio', 'milestones', 'overdue'];
+const DEFAULT_WIDGETS: WidgetId[] = ['kpis', 'myTasks', 'myTime', 'favorites', 'statusChart', 'workloadChart', 'portfolio', 'milestones', 'overdue'];
 const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = { active: '#22c55e', on_hold: '#f59e0b', completed: '#3b82f6', archived: '#9ca3af' };
 
 export default function DashboardPage() {

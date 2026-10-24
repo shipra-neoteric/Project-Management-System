@@ -3,7 +3,8 @@ import { Router } from 'express';
 import { Types } from 'mongoose';
 import { z } from 'zod';
 import { env } from '../config/env';
-import { Group } from '../models/Access';
+import { Group, TimeOff } from '../models/Access';
+import { HourlyRate } from '../models/Finance';
 import { Project } from '../models/Project';
 import { Resource } from '../models/Resource';
 import { Task } from '../models/Task';
@@ -85,12 +86,20 @@ usersRouter.delete('/:id', async (req, res) => {
   if (!hasGlobal(req.user!, 'manage_users')) throw forbidden('You don’t have permission to manage users');
   const user = await User.findById(assertObjectId(req.params.id, 'User'));
   if (!user) throw notFound('User');
-  if (user.kind !== 'placeholder' && !user.invited) throw badRequest('Only placeholders and pending invitations can be deleted. Deactivate real users instead.');
+  if (user.kind !== 'placeholder' && !user.invited) {
+    // Real accounts: administrators only, never admins or yourself, and only once they own no projects.
+    if (req.user!.role !== 'Admin') throw badRequest('Only placeholders and pending invitations can be deleted. Deactivate real users instead.');
+    if (user.role === 'Admin' || user._id.equals(req.user!._id)) throw badRequest('Administrators cannot be deleted. Remove admin access first.');
+    if (await Project.exists({ owner: user._id })) throw badRequest('This person still owns projects. Transfer or delete them first.');
+  }
   await Promise.all([
     Project.updateMany({ 'members.user': user._id }, { $pull: { members: { user: user._id } } }),
     Task.updateMany({ assignee: user._id }, { $set: { assignee: null } }),
     Task.updateMany({ accountable: user._id }, { $set: { accountable: null } }),
+    Task.updateMany({ watchers: user._id }, { $pull: { watchers: user._id } }),
     Group.updateMany({ members: user._id }, { $pull: { members: user._id } }),
+    HourlyRate.deleteMany({ user: user._id }),
+    TimeOff.deleteMany({ user: user._id }),
   ]);
   await user.deleteOne();
   res.status(204).end();

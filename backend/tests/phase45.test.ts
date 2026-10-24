@@ -236,6 +236,19 @@ describe('Phase 4 & 5 API', () => {
     expect(mine.body.entries.some((e: { project: string }) => e.project === extra)).toBe(false);
   });
 
+  it('lets administrators delete real users who own no projects', async () => {
+    // Created directly: the auth rate limiter is close to its limit in this suite.
+    const { User } = await import('../src/models/User');
+    const { Project } = await import('../src/models/Project');
+    const dan = await User.create({ name: 'Dan Demo', email: 'dan.demo@example.com', passwordHash: 'x' });
+    expect((await request(app).delete(`/api/users/${dan._id}`).set(auth(bob))).status).toBe(403);
+    expect((await request(app).delete(`/api/users/${adminId}`).set(auth(admin))).status).toBe(400); // admins are never deleted
+    const own = await Project.create({ name: 'Dan owns this', key: 'DAN', startDate: '2026-11-02', finishDate: '2026-11-02', owner: dan._id });
+    expect((await request(app).delete(`/api/users/${dan._id}`).set(auth(admin))).status).toBe(400); // still owns a project
+    await own.deleteOne();
+    expect((await request(app).delete(`/api/users/${dan._id}`).set(auth(admin))).status).toBe(204);
+  });
+
   it('applies workflow rules to custom roles', async () => {
     const role = (await request(app).post('/api/roles').set(auth(admin)).send({ name: 'Site lead', permissions: ['edit_tasks'] })).body.role;
     const [neu, closed] = [ws.statuses.find((s) => s.name === 'New')!._id, ws.statuses.find((s) => s.name === 'Closed')!._id];
