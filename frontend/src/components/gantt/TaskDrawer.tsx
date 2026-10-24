@@ -1,13 +1,14 @@
 'use client';
 
-import { Bell, BellOff, CalendarRange, ClipboardList, GitBranch, Link2, ListPlus, Plus, StickyNote, Tag, Trash2, Users, X } from 'lucide-react';
+import { Bell, BellOff, CalendarRange, ClipboardList, GitBranch, Hourglass, Link2, ListPlus, Plus, StickyNote, Tag, Trash2, Users, X } from 'lucide-react';
 import { CustomFieldInput, isEmptyValue } from '@/components/ui/CustomFieldInput';
 import { FilterTabs } from '@/components/ui/Layout';
-import { useCommentMutations, useTaskActivity } from '@/features/queries';
+import { useBudgets, useCommentMutations, useTaskActivity } from '@/features/queries';
 import { useAuth } from '@/lib/auth';
-import { atLeast } from '@/lib/status';
+import { can } from '@/lib/permissions';
 import { isTransitionAllowed } from '@/lib/workflow';
 import { TaskActivityPanel, TaskFilesPanel } from './TaskPanels';
+import { TaskTimePanel } from './TaskTimePanel';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +22,7 @@ import { confirmDanger, toastError } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fmtDate } from '@/lib/dates';
+import { fmtHours } from '@/lib/money';
 import { PRIORITY_LABELS, readableId } from '@/lib/query';
 import { TASK_STATUS, taskStatus } from '@/lib/status';
 import type { LinkType, Priority, RelationType, Task, TaskLink } from '@/lib/types';
@@ -38,6 +40,9 @@ interface Draft {
   manual: boolean;
   constraintStart: string;
   percentComplete: string;
+  work: string;
+  remainingWork: string;
+  budget: string;
   predecessors: TaskLink[];
   relations: { task: string; type: RelationType }[];
   resources: string[];
@@ -69,6 +74,9 @@ function toDraft(t: Task): Draft {
     manual: !!t.manual,
     constraintStart: t.constraintStart ?? '',
     percentComplete: String(t.percentComplete),
+    work: t.work == null ? '' : String(t.work),
+    remainingWork: t.remainingWork == null ? '' : String(t.remainingWork),
+    budget: t.budget ?? '',
     predecessors: t.predecessors.map((p) => ({ ...p })),
     relations: (t.relations ?? []).map((r) => ({ ...r })),
     resources: [...t.resources],
@@ -86,12 +94,13 @@ export function TaskDrawerHost() {
 }
 
 function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
-  const { projectId, tasks, resources, ctx, canEdit, workSettings, plan } = useWorkspace();
+  const { projectId, tasks, resources, ctx, canEdit, workSettings, plan, can: canDo } = useWorkspace();
+  const budgets = useBudgets(projectId, canDo('view_budgets'));
   const mutations = useTaskMutations(projectId);
   const [draft, setDraft] = useState<Draft>(() => toDraft(task));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<'details' | 'activity' | 'files'>('details');
+  const [tab, setTab] = useState<'details' | 'activity' | 'files' | 'time'>('details');
   const { user } = useAuth();
   const activity = useTaskActivity(projectId, task._id);
   const { watch } = useCommentMutations(projectId, task._id);
@@ -120,6 +129,9 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
   const shown = (key: string) => !hidden.has(key);
   const customFields = (workSettings?.customFields ?? []).filter((f) => f.scope === 'task' && shown(f._id));
   // Only statuses the workflow allows from the task's current status.
+  const progressMode = plan.project.progressMode ?? 'manual';
+  // In work- or status-based projects % complete is derived, not typed in.
+  const pctDerived = task.isSummary || progressMode !== 'manual';
   const statusOptions = (workSettings?.statuses ?? [])
     .filter((s) => isTransitionAllowed(workSettings?.workflow, role, task.status, s._id))
     .map((s) => ({ value: s._id, label: s.name }));
@@ -132,6 +144,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
     if (!name) return setError('Task name is required');
     if (!task.isSummary && (!Number.isInteger(duration) || duration < 0)) return setError('Duration must be a whole number of days (0 for a milestone)');
     if (!task.isSummary && (Number.isNaN(pct) || pct < 0 || pct > 100)) return setError('% complete must be between 0 and 100');
+    const hoursOf = (v: string) => (v.trim() === '' ? null : Number(v));
+    const work = hoursOf(draft.work);
+    const remainingWork = hoursOf(draft.remainingWork);
+    if ([work, remainingWork].some((h) => h !== null && (Number.isNaN(h) || h < 0))) return setError('Work and remaining work must be positive numbers of hours');
+    if (work !== null && remainingWork !== null && remainingWork > work) return setError('Remaining work cannot be more than the estimated work');
     if (draft.predecessors.some((p) => !p.task) || draft.relations.some((r) => !r.task)) return setError('Choose a task in every link row, or remove the empty row');
     if (draft.manual && !draft.constraintStart) return setError('Manually scheduled tasks need a start date');
     const missing = customFields.filter((f) => f.required && isEmptyValue(draft.customValues[f._id])).map((f) => f.name);
@@ -155,8 +172,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
     if (draft.status) patch.status = draft.status;
     if (!task.isSummary) {
       patch.duration = duration;
-      patch.percentComplete = pct;
+      if (progressMode === 'manual') patch.percentComplete = pct;
+      patch.work = work;
+      patch.remainingWork = remainingWork;
     }
+    if (canDo('view_budgets')) patch.budget = draft.budget || null;
     setSaving(true);
     try {
       await mutations.update.mutateAsync({ taskId: task._id, patch });
@@ -214,13 +234,14 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
       }
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-        <FilterTabs<'details' | 'activity' | 'files'>
+        <FilterTabs<'details' | 'activity' | 'files' | 'time'>
           value={tab}
           onChange={setTab}
           tabs={[
             { key: 'details', label: 'Details' },
             { key: 'activity', label: 'Activity', count: activity.data?.activity.filter((a) => a.kind === 'comment').length },
             { key: 'files', label: 'Files' },
+            ...(canDo('log_time') || canDo('view_time') ? [{ key: 'time' as const, label: 'Time' }] : []),
           ]}
         />
         <Button
@@ -235,9 +256,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
         </Button>
       </div>
       {tab === 'activity' ? (
-        <TaskActivityPanel projectId={projectId} taskId={task._id} people={[...ctx.people.values()]} canComment={canEdit} canModerate={atLeast(role, 'manager')} />
+        <TaskActivityPanel projectId={projectId} taskId={task._id} people={[...ctx.people.values()]} canComment={canEdit} canModerate={can(plan.project, 'manage_project')} />
       ) : tab === 'files' ? (
-        <TaskFilesPanel projectId={projectId} taskId={task._id} canEdit={canEdit} canModerate={atLeast(role, 'manager')} />
+        <TaskFilesPanel projectId={projectId} taskId={task._id} canEdit={canEdit} canModerate={can(plan.project, 'manage_project')} />
+      ) : tab === 'time' ? (
+        <TaskTimePanel task={task} />
       ) : (
       <div className="space-y-8">
         {error && <Alert>{error}</Alert>}
@@ -363,7 +386,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
             <Field label="Duration (working days)" htmlFor="t-dur" hint={task.isSummary ? 'Calculated from sub-tasks' : '0 makes this a milestone'}>
               <input id="t-dur" type="number" min={0} className={inputCls} value={draft.duration} disabled={readOnly || task.isSummary} onChange={(e) => set('duration', e.target.value)} />
             </Field>
-            <Field label="% complete" htmlFor="t-pct" hint={task.isSummary ? 'Rolled up from sub-tasks' : undefined}>
+            <Field
+              label="% complete"
+              htmlFor="t-pct"
+              hint={task.isSummary ? 'Rolled up from sub-tasks' : progressMode === 'work' ? 'Calculated from work and remaining work' : progressMode === 'status' ? 'Set by the status (status-based progress)' : undefined}
+            >
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -371,12 +398,12 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
                   max={100}
                   step={5}
                   value={draft.percentComplete}
-                  disabled={readOnly || task.isSummary}
+                  disabled={readOnly || pctDerived}
                   onChange={(e) => set('percentComplete', e.target.value)}
                   className="flex-1 accent-[var(--theme-primary)]"
                   aria-label="% complete slider"
                 />
-                <input id="t-pct" type="number" min={0} max={100} className={cn(inputCls, 'w-20')} value={draft.percentComplete} disabled={readOnly || task.isSummary} onChange={(e) => set('percentComplete', e.target.value)} />
+                <input id="t-pct" type="number" min={0} max={100} className={cn(inputCls, 'w-20')} value={draft.percentComplete} disabled={readOnly || pctDerived} onChange={(e) => set('percentComplete', e.target.value)} />
               </div>
             </Field>
             {!task.isSummary && (
@@ -416,6 +443,41 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
                 )}
               </div>
             </Field>
+          </div>
+        </section>
+
+        <section>
+          <Sec title="Work & budget" icon={Hourglass} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <Field label="Work (hours)" htmlFor="t-work" hint={task.isSummary ? 'Total of sub-tasks' : 'Estimated effort'}>
+              <input id="t-work" type="number" min={0} step={0.5} className={inputCls} value={task.isSummary ? (task.work ?? '') : draft.work} disabled={readOnly || task.isSummary} onChange={(e) => set('work', e.target.value)} />
+            </Field>
+            <Field label="Remaining (hours)" htmlFor="t-remaining" hint={task.isSummary ? 'Total of sub-tasks' : 'Effort still needed'}>
+              <input
+                id="t-remaining"
+                type="number"
+                min={0}
+                step={0.5}
+                className={inputCls}
+                value={task.isSummary ? (task.remainingWork ?? '') : draft.remainingWork}
+                disabled={readOnly || task.isSummary}
+                onChange={(e) => set('remainingWork', e.target.value)}
+              />
+            </Field>
+            <Field label="Spent" hint="From logged time">
+              <div className={cn(inputCls, 'flex items-center bg-gray-50 dark:bg-gray-800 tabular-nums')}>{fmtHours(task.spentHours ?? 0)}</div>
+            </Field>
+            {canDo('view_budgets') && (
+              <Field label="Budget" className="sm:col-span-3" hint="Time and costs on this task count against the budget">
+                <ThemedSelect
+                  options={[{ value: '', label: 'No budget' }, ...(budgets.data?.budgets ?? []).map((b) => ({ value: b._id, label: b.name }))]}
+                  value={draft.budget}
+                  disabled={readOnly || !budgets.data?.budgets.length}
+                  placeholder={budgets.data?.budgets.length ? 'Select…' : 'No budgets in this project yet'}
+                  onChange={(v) => set('budget', v)}
+                />
+              </Field>
+            )}
           </div>
         </section>
 

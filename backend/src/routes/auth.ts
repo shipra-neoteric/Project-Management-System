@@ -46,12 +46,14 @@ async function sendVerification(user: UserDoc) {
     label: 'Confirm email',
     url,
   });
-  void sendMail({ to: user.email, subject: 'Confirm your email address', text, html });
+  if (user.email) void sendMail({ to: user.email, subject: 'Confirm your email address', text, html });
 }
 
 authRouter.post('/register', authLimiter, async (req, res) => {
   const body = parseBody(registerSchema, req.body);
-  if (await User.exists({ email: body.email })) throw conflict('An account with this email already exists');
+  const existing = await User.findOne({ email: body.email });
+  if (existing?.invited) throw conflict('You have been invited already — use the link in your invitation email to set your password');
+  if (existing) throw conflict('An account with this email already exists');
 
   const isFirstUser = (await User.estimatedDocumentCount()) === 0;
   const user = await User.create({
@@ -67,7 +69,7 @@ authRouter.post('/register', authLimiter, async (req, res) => {
 authRouter.post('/login', authLimiter, async (req, res) => {
   const body = parseBody(loginSchema, req.body);
   const user = await User.findOne({ email: body.email }).select('+passwordHash');
-  const valid = user ? await bcrypt.compare(body.password, user.passwordHash) : false;
+  const valid = user?.passwordHash ? await bcrypt.compare(body.password, user.passwordHash) : false;
   if (!user || !valid) throw new HttpError(401, 'UNAUTHENTICATED', 'Incorrect email or password');
   if (!user.isActive) throw new HttpError(403, 'FORBIDDEN', 'Your account has been deactivated. Contact an administrator.');
   res.json({ token: signToken(user), user: publicUser(user) });
@@ -77,11 +79,35 @@ authRouter.get('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user!) });
 });
 
-const DASHBOARD_WIDGETS = ['kpis', 'favorites', 'myTasks', 'portfolio', 'milestones', 'overdue', 'statusChart', 'projectStatusChart', 'workloadChart'] as const;
+// ---- Invitations --------------------------------------------------------------------------------
+
+/** GET /auth/invite?token= — who the invitation is for (prefills the accept form). */
+authRouter.get('/invite', authLimiter, async (req, res) => {
+  const token = String(req.query.token ?? '');
+  const user = token.length >= 10 ? await User.findOne({ inviteTokenHash: hashToken(token), invited: true }) : null;
+  if (!user) throw badRequest('This invitation link is invalid or has already been used');
+  res.json({ email: user.email, name: user.name });
+});
+
+authRouter.post('/accept-invite', authLimiter, async (req, res) => {
+  const body = parseBody(z.object({ token: z.string().min(10).max(200), name: z.string().trim().min(2).max(80), password }), req.body);
+  const user = await User.findOne({ inviteTokenHash: hashToken(body.token), invited: true });
+  if (!user) throw badRequest('This invitation link is invalid or has already been used');
+  user.name = body.name;
+  user.passwordHash = await bcrypt.hash(body.password, 10);
+  user.invited = false;
+  user.inviteTokenHash = null;
+  user.emailVerified = true;
+  await user.save();
+  res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+const DASHBOARD_WIDGETS = ['kpis', 'favorites', 'myTasks', 'portfolio', 'milestones', 'overdue', 'statusChart', 'projectStatusChart', 'workloadChart', 'myTime'] as const;
 const profileSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   notifyByEmail: z.boolean().optional(),
   dashboardWidgets: z.array(z.enum(DASHBOARD_WIDGETS)).max(DASHBOARD_WIDGETS.length).nullable().optional(),
+  workSchedule: z.object({ hoursPerDay: z.number().min(0).max(24), workingDays: z.array(z.number().int().min(0).max(6)).max(7) }).optional(),
 });
 
 authRouter.patch('/me', requireAuth, async (req, res) => {
@@ -89,6 +115,7 @@ authRouter.patch('/me', requireAuth, async (req, res) => {
   const user = req.user!;
   if (body.name !== undefined) user.name = body.name;
   if (body.notifyByEmail !== undefined) user.notifyByEmail = body.notifyByEmail;
+  if (body.workSchedule !== undefined) user.set('workSchedule', body.workSchedule);
   if (body.dashboardWidgets !== undefined) user.set('dashboardWidgets', body.dashboardWidgets ? [...new Set(body.dashboardWidgets)] : undefined);
   await user.save();
   res.json({ user: publicUser(user) });
@@ -97,7 +124,7 @@ authRouter.patch('/me', requireAuth, async (req, res) => {
 authRouter.post('/change-password', requireAuth, authLimiter, async (req, res) => {
   const body = parseBody(z.object({ currentPassword: z.string().min(1, 'Enter your current password'), newPassword: password }), req.body);
   const user = await User.findById(req.user!._id).select('+passwordHash');
-  if (!user || !(await bcrypt.compare(body.currentPassword, user.passwordHash))) throw badRequest('Your current password is incorrect');
+  if (!user?.passwordHash || !(await bcrypt.compare(body.currentPassword, user.passwordHash))) throw badRequest('Your current password is incorrect');
   user.passwordHash = await bcrypt.hash(body.newPassword, 10);
   await user.save();
   res.json({ ok: true });
@@ -133,7 +160,7 @@ authRouter.post('/forgot-password', authLimiter, async (req, res) => {
       [`Hi ${user.name},`, 'Someone asked to reset the password for your account. The link below works for 1 hour.', "If it wasn't you, ignore this email — your password stays the same."],
       { label: 'Choose a new password', url: `${env.appUrl}/reset-password?token=${token}` },
     );
-    void sendMail({ to: user.email, subject: 'Reset your password', text, html });
+    if (user.email) void sendMail({ to: user.email, subject: 'Reset your password', text, html });
   }
   res.json({ ok: true });
 });

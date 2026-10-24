@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Archive, BarChart3, CalendarDays, KanbanSquare, LayoutGrid, Settings, Star, Table2, Users } from 'lucide-react';
+import { Activity, Archive, BarChart3, CalendarDays, CalendarRange, Clock, FileBarChart, KanbanSquare, LayoutGrid, PiggyBank, Settings, Star, Table2, Users } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { TaskDrawerHost } from '@/components/gantt/TaskDrawer';
@@ -13,19 +13,24 @@ import { useFavorite, useProject, useProjects } from '@/features/queries';
 import { toastError } from '@/lib/alerts';
 import { ApiError, errorMessage } from '@/lib/api';
 import { fmtDate } from '@/lib/dates';
-import { KIND_LABEL, PROJECT_ROLE, PROJECT_STATUS } from '@/lib/status';
+import { KIND_LABEL, PROJECT_STATUS, roleBadge } from '@/lib/status';
 import { useTheme } from '@/lib/theme';
-import type { ProjectModule } from '@/lib/types';
+import { can } from '@/lib/permissions';
+import type { ProjectModule, ProjectPermission } from '@/lib/types';
 
-type TabKey = 'overview' | 'gantt' | 'table' | 'board' | 'calendar' | 'resources' | 'activity' | 'settings';
-const SUB_TABS: TabKey[] = ['overview', 'table', 'board', 'calendar', 'resources', 'activity', 'settings'];
-const TABS: { key: TabKey; label: string; icon: typeof BarChart3; module?: ProjectModule }[] = [
+type TabKey = 'overview' | 'gantt' | 'table' | 'board' | 'calendar' | 'team' | 'resources' | 'time' | 'budgets' | 'reports' | 'activity' | 'settings';
+const SUB_TABS: TabKey[] = ['overview', 'table', 'board', 'calendar', 'team', 'resources', 'time', 'budgets', 'reports', 'activity', 'settings'];
+const TABS: { key: TabKey; label: string; icon: typeof BarChart3; module?: ProjectModule; perm?: ProjectPermission[] }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutGrid },
   { key: 'gantt', label: 'Gantt chart', icon: BarChart3, module: 'gantt' },
   { key: 'table', label: 'Table', icon: Table2, module: 'table' },
   { key: 'board', label: 'Board', icon: KanbanSquare, module: 'board' },
   { key: 'calendar', label: 'Calendar', icon: CalendarDays, module: 'calendar' },
+  { key: 'team', label: 'Team planner', icon: CalendarRange, module: 'team_planner' },
   { key: 'resources', label: 'Resources', icon: Users, module: 'resources' },
+  { key: 'time', label: 'Time & costs', icon: Clock, module: 'time_costs', perm: ['log_time', 'view_time', 'view_costs', 'log_costs'] },
+  { key: 'budgets', label: 'Budgets', icon: PiggyBank, module: 'budgets', perm: ['view_budgets'] },
+  { key: 'reports', label: 'Reports', icon: FileBarChart, module: 'reports', perm: ['log_time', 'view_time', 'view_costs'] },
   { key: 'activity', label: 'Activity', icon: Activity, module: 'activity' },
   { key: 'settings', label: 'Settings & team', icon: Settings },
 ];
@@ -58,7 +63,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   }
 
   const disabled = new Set(project.disabledModules ?? []);
-  const tabs = TABS.filter((t) => !t.module || !disabled.has(t.module));
+  const tabs = TABS.filter((t) => (!t.module || !disabled.has(t.module)) && (!t.perm || t.perm.some((p) => can({ ...project, status: 'active' }, p))));
   const parent = project.parent && typeof project.parent === 'object' ? project.parent : null;
   const isFav = !!project.favorite;
 
@@ -96,7 +101,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               <ProgressBar value={rollup?.percentComplete ?? project.stats.percentComplete} />
               <span className="tabular-nums text-xs">{rollup?.percentComplete ?? project.stats.percentComplete}%</span>
             </span>
-            <Badge tone={PROJECT_ROLE[project.myRole].tone}>You: {PROJECT_ROLE[project.myRole].label}</Badge>
+            <Badge tone={roleBadge(project.myRole, project.myRoleName).tone}>You: {roleBadge(project.myRole, project.myRoleName).label}</Badge>
           </span>
         }
       />

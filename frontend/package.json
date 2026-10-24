@@ -33,6 +33,7 @@
     "react-hook-form": "^7.90.0",
     "sweetalert2": "^11.26.25",
     "tailwind-merge": "^3.7.0",
+    "write-excel-file": "^4.1.1",
     "zod": "^4.6.7"
   }
 }

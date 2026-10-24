@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ChevronUp, CircleDot, GitMerge, ListChecks, ListPlus, Milestone, Pencil, Plus, Save, Tags, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleDot, Coins, GitMerge, ListChecks, ListPlus, Milestone, Pencil, Plus, Save, Tags, Timer, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -11,16 +11,25 @@ import { Card, FilterTabs, Page, PageHeader, rowCls, tableCls, tbodyCls, td, th,
 import { StatusBadge, TypeLabel } from '@/components/ui/TaskBits';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { AdminGate } from '@/features/AdminGate';
-import { useWorkSettings, useWorkSettingsMutations, useWorkflowMutation } from '@/features/queries';
+import { useRoles, useWorkSettings, useWorkSettingsMutations, useWorkflowMutation } from '@/features/queries';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { CustomField, CustomFieldKind, PhaseDefinition, Status, TaskType, WorkSettings, Workflow } from '@/lib/types';
+import { useMoney } from '@/lib/money';
+import type { CostType, CustomField, CustomFieldKind, PhaseDefinition, Status, TaskType, TimeActivity, WorkSettings, Workflow } from '@/lib/types';
 import { OPTIONAL_TASK_FIELDS } from '@/lib/workflow';
 
-type Kind = 'types' | 'statuses' | 'phases' | 'custom-fields';
+type Kind = 'types' | 'statuses' | 'phases' | 'custom-fields' | 'activities' | 'cost-types';
 type Tab = Kind | 'workflow';
 type AnyItem = { _id: string; name: string; position: number; color?: string; isDefault?: boolean };
+const ADD_LABEL: Record<Kind, string> = {
+  types: 'type',
+  statuses: 'status',
+  phases: 'phase',
+  'custom-fields': 'field',
+  activities: 'activity',
+  'cost-types': 'cost type',
+};
 const PRESETS = ['#6b7280', '#3b82f6', '#22c55e', '#14b8a6', '#a855f7', '#8b5cf6', '#f59e0b', '#f97316', '#ef4444', '#ec4899'];
 const FIELD_KINDS: { value: CustomFieldKind; label: string }[] = [
   { value: 'text', label: 'Text (one line)' },
@@ -35,7 +44,7 @@ const FIELD_KINDS: { value: CustomFieldKind; label: string }[] = [
 
 export default function WorkSettingsPage() {
   return (
-    <AdminGate>
+    <AdminGate perm="manage_work_settings">
       <WorkSettingsContent />
     </AdminGate>
   );
@@ -53,11 +62,11 @@ function WorkSettingsContent() {
     <Page>
       <PageHeader
         title="Work settings"
-        subtitle="Organisation-wide task types, statuses, workflow, custom fields and project phases"
+        subtitle="Organisation-wide task types, statuses, workflow, custom fields, project phases, time activities and cost types"
         actions={
           tab !== 'workflow' && (
             <Button variant="primary" icon={Plus} onClick={() => setEditing({ kind: tab, item: null })}>
-              Add {tab === 'custom-fields' ? 'field' : tab === 'phases' ? 'phase' : tab === 'types' ? 'type' : 'status'}
+              Add {ADD_LABEL[tab]}
             </Button>
           )
         }
@@ -71,6 +80,8 @@ function WorkSettingsContent() {
           { key: 'workflow', label: 'Workflow', icon: GitMerge },
           { key: 'custom-fields', label: 'Custom fields', icon: ListPlus, count: data.customFields.length },
           { key: 'phases', label: 'Project phases', icon: Milestone, count: data.phases.length },
+          { key: 'activities', label: 'Time activities', icon: Timer, count: data.activities?.length ?? 0 },
+          { key: 'cost-types', label: 'Cost types', icon: Coins, count: data.costTypes?.length ?? 0 },
         ]}
       />
       {tab === 'workflow' ? (
@@ -85,10 +96,19 @@ function WorkSettingsContent() {
 
 function ItemList({ kind, data, onEdit }: { kind: Kind; data: WorkSettings; onEdit: (item: AnyItem) => void }) {
   const { remove, update } = useWorkSettingsMutations();
-  const list: AnyItem[] = kind === 'types' ? data.types : kind === 'statuses' ? data.statuses : kind === 'phases' ? data.phases : data.customFields;
+  const { money } = useMoney();
+  const lists: Record<Kind, AnyItem[]> = {
+    types: data.types,
+    statuses: data.statuses,
+    phases: data.phases,
+    'custom-fields': data.customFields,
+    activities: data.activities ?? [],
+    'cost-types': data.costTypes ?? [],
+  };
+  const list = lists[kind];
 
   const onDelete = async (item: AnyItem) => {
-    const extra = kind === 'custom-fields' ? 'All stored values of this field will be deleted.' : 'Only possible when nothing uses it.';
+    const extra = kind === 'custom-fields' ? 'All stored values of this field will be deleted.' : 'Only possible when nothing uses it (tasks, time or cost entries).';
     if (!(await confirmDanger(`Delete "${item.name}"?`, extra))) return;
     try {
       await remove.mutateAsync({ kind, id: item._id });
@@ -128,7 +148,17 @@ function ItemList({ kind, data, onEdit }: { kind: Kind; data: WorkSettings; onEd
         <>
           {s.isDefault && <Badge tone="info">Default</Badge>}
           {s.isClosed && <Badge tone="success">Closed</Badge>}
+          {s.percentDone !== null && s.percentDone !== undefined && <Badge>{s.percentDone}% done</Badge>}
         </>
+      );
+    }
+    if (kind === 'activities') return (item as TimeActivity).isDefault ? <Badge tone="info">Default</Badge> : null;
+    if (kind === 'cost-types') {
+      const c = item as CostType;
+      return (
+        <span className="text-sm text-gray-600 dark:text-gray-300 tabular-nums">
+          {money(c.unitRate)} per {c.unit}
+        </span>
       );
     }
     if (kind === 'phases') return (item as PhaseDefinition).gate ? <span className="text-xs text-gray-500">Gate: {(item as PhaseDefinition).gate}</span> : null;
@@ -207,9 +237,15 @@ function ItemDrawer({ kind, item, data, onClose }: { kind: Kind; item: AnyItem |
   const [options, setOptions] = useState<{ _id?: string; name: string }[]>(field?.options ?? []);
   const [required, setRequired] = useState(!!field?.required);
   const [description, setDescription] = useState(field?.description ?? '');
+  const statusItem = item as Status | null;
+  const [percentDone, setPercentDone] = useState<string>(statusItem?.percentDone === null || statusItem?.percentDone === undefined ? '' : String(statusItem.percentDone));
+  const costType = item as CostType | null;
+  const [unit, setUnit] = useState(costType?.unit ?? 'unit');
+  const [unitRate, setUnitRate] = useState(costType ? String(costType.unitRate) : '');
   const [error, setError] = useState<string | null>(null);
+  const { currency } = useMoney();
 
-  const label = kind === 'types' ? 'type' : kind === 'statuses' ? 'status' : kind === 'phases' ? 'project phase' : 'custom field';
+  const label = { types: 'type', statuses: 'status', phases: 'project phase', 'custom-fields': 'custom field', activities: 'time activity', 'cost-types': 'cost type' }[kind];
   const hasColor = kind !== 'custom-fields';
 
   const save = async () => {
@@ -218,7 +254,18 @@ function ItemDrawer({ kind, item, data, onClose }: { kind: Kind; item: AnyItem |
     const body: Record<string, unknown> = { name: name.trim() };
     if (hasColor) body.color = color;
     if (kind === 'types') Object.assign(body, { isMilestone: flag, hiddenFields, ...(isDefault ? { isDefault: true } : {}) });
-    if (kind === 'statuses') Object.assign(body, { isClosed: flag, ...(isDefault ? { isDefault: true } : {}) });
+    if (kind === 'statuses') {
+      const pct = percentDone.trim() === '' ? null : Math.round(Number(percentDone));
+      if (pct !== null && (!Number.isFinite(pct) || pct < 0 || pct > 100)) return setError('% done must be between 0 and 100');
+      Object.assign(body, { isClosed: flag, percentDone: pct, ...(isDefault ? { isDefault: true } : {}) });
+    }
+    if (kind === 'activities' && isDefault) body.isDefault = true;
+    if (kind === 'cost-types') {
+      const rate = Number(unitRate);
+      if (!unit.trim()) return setError('Unit is required');
+      if (unitRate.trim() === '' || !Number.isFinite(rate) || rate < 0) return setError('Enter a unit rate of 0 or more');
+      Object.assign(body, { unit: unit.trim(), unitRate: rate });
+    }
     if (kind === 'phases') body.gate = gate.trim();
     if (kind === 'custom-fields') {
       const cleaned = options.map((o) => ({ ...o, name: o.name.trim() })).filter((o) => o.name);
@@ -282,6 +329,27 @@ function ItemDrawer({ kind, item, data, onClose }: { kind: Kind; item: AnyItem |
               {kind === 'types' ? 'Use for milestones (tasks with 0 duration)' : 'Closed status (sets the task to 100% complete)'}
             </label>
           </>
+        )}
+        {kind === 'statuses' && (
+          <Field label="% done" htmlFor="ws-pct" hint="Progress implied by this status in projects that use status-based progress. Leave empty to keep the task's own %.">
+            <input id="ws-pct" type="number" min={0} max={100} step={5} className={cn(inputCls, 'w-32')} value={percentDone} onChange={(e) => setPercentDone(e.target.value)} />
+          </Field>
+        )}
+        {kind === 'activities' && (
+          <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <input type="checkbox" checked={isDefault} disabled={!!item?.isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="w-4 h-4 accent-[var(--theme-primary)]" />
+            Default activity for new time entries
+          </label>
+        )}
+        {kind === 'cost-types' && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Unit" htmlFor="ws-unit" required hint="e.g. bag, m², hour, trip">
+              <input id="ws-unit" className={inputCls} value={unit} maxLength={20} onChange={(e) => setUnit(e.target.value)} />
+            </Field>
+            <Field label={`Rate per unit (${currency})`} htmlFor="ws-rate" required hint="Applies to new cost entries">
+              <input id="ws-rate" type="number" min={0} step="0.01" className={inputCls} value={unitRate} onChange={(e) => setUnitRate(e.target.value)} />
+            </Field>
+          </div>
         )}
         {kind === 'types' && (
           <section>
@@ -354,7 +422,17 @@ function ItemDrawer({ kind, item, data, onClose }: { kind: Kind; item: AnyItem |
 /** Matrix of allowed status changes per project role (owners/admins are never restricted). */
 function WorkflowEditor({ data }: { data: WorkSettings }) {
   const save = useWorkflowMutation();
-  const [role, setRole] = useState<'member' | 'manager'>('member');
+  const roles = useRoles();
+  // Built-in roles by key, custom roles by id; viewers can never change tasks.
+  const roleTabs = useMemo(
+    () =>
+      (roles.data?.roles ?? [])
+        .filter((r) => r.key !== 'viewer' && r.permissions.includes('edit_tasks'))
+        .map((r) => ({ key: r.key ?? r._id, label: r.name })),
+    [roles.data],
+  );
+  const [role, setRole] = useState<string>('member');
+  const roleLabel = roleTabs.find((r) => r.key === role)?.label ?? 'this role';
   const [draft, setDraft] = useState<Workflow>(data.workflow ?? {});
   useEffect(() => setDraft(data.workflow ?? {}), [data.workflow]);
 
@@ -405,24 +483,17 @@ function WorkflowEditor({ data }: { data: WorkSettings }) {
     >
       <div className="p-5 space-y-4">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Choose which status changes each project role may make. Project owners and administrators can always change any status. Viewers can never change tasks.
+          Choose which status changes each project role may make. Only roles that can edit tasks are listed. Project owners and administrators can always change any status.
         </p>
         <div className="flex flex-wrap items-center gap-4">
-          <FilterTabs<'member' | 'manager'>
-            value={role}
-            onChange={setRole}
-            tabs={[
-              { key: 'member', label: 'Members' },
-              { key: 'manager', label: 'Managers' },
-            ]}
-          />
+          <FilterTabs<string> value={role} onChange={setRole} tabs={roleTabs.length ? roleTabs : [{ key: 'member', label: 'Member' }]} />
           <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <input type="checkbox" checked={restricted} onChange={(e) => enable(e.target.checked)} className="w-4 h-4 accent-[var(--theme-primary)]" />
-            Restrict status changes for {role === 'member' ? 'members' : 'managers'}
+            Restrict status changes for {roleLabel}
           </label>
         </div>
         {!restricted ? (
-          <Alert tone="info">{role === 'member' ? 'Members' : 'Managers'} can move tasks to any status.</Alert>
+          <Alert tone="info">{roleLabel} can move tasks to any status.</Alert>
         ) : (
           <div className="overflow-x-auto">
             <table className="text-sm border-collapse">
@@ -452,7 +523,7 @@ function WorkflowEditor({ data }: { data: WorkSettings }) {
                             checked={(rules?.[from._id] ?? []).includes(to._id)}
                             onChange={() => toggle(from._id, to._id)}
                             className="w-4 h-4 accent-[var(--theme-primary)]"
-                            aria-label={`${role} may move from ${from.name} to ${to.name}`}
+                            aria-label={`${roleLabel} may move from ${from.name} to ${to.name}`}
                           />
                         )}
                       </td>

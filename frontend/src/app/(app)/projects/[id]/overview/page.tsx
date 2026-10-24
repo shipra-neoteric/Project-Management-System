@@ -16,7 +16,8 @@ import { useProjectOverview } from '@/features/queries';
 import { errorMessage } from '@/lib/api';
 import { fmtDate } from '@/lib/dates';
 import { formatCustomValue } from '@/lib/query';
-import { atLeast, KIND_LABEL, PROJECT_STATUS } from '@/lib/status';
+import { KIND_LABEL, PROJECT_STATUS } from '@/lib/status';
+import { can, projectPeople } from '@/lib/permissions';
 import type { UserRef } from '@/lib/types';
 
 export default function OverviewPage() {
@@ -30,7 +31,7 @@ export default function OverviewPage() {
 
   const { project, rollup } = data;
   const isContainer = project.kind !== 'project';
-  const people = new Map<string, UserRef>([[project.owner._id, project.owner], ...project.members.filter((m) => m.user).map((m) => [m.user._id, m.user] as [string, UserRef])]);
+  const people = projectPeople(project) as Map<string, UserRef>;
   const statuses = new Map(workSettings.statuses.map((s) => [s._id, s]));
   const types = new Map(workSettings.types.map((t) => [t._id, t]));
   const phases = new Map(workSettings.phases.map((p) => [p._id, p]));
@@ -84,7 +85,7 @@ export default function OverviewPage() {
                 return { key: p.definition, name: def?.name ?? 'Phase', color: def?.color ?? '#9ca3af', gate: def?.gate ?? '', start: p.start, finish: p.finish, gateStatus: p.gateStatus };
               })}
             />
-            {!project.lifecycle?.length && atLeast(project.myRole, 'manager') && (
+            {!project.lifecycle?.length && can(project, 'manage_project') && (
               <Link href={`/projects/${id}/settings`} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-2 inline-block">
                 Set up phases in Settings
               </Link>
@@ -116,7 +117,7 @@ export default function OverviewPage() {
           title={`Sub-projects (${data.children.length})`}
           icon={FolderTree}
           actions={
-            atLeast(project.myRole, 'member') && project.status !== 'archived' && (
+            can(project, 'add_subprojects') && (
               <Button size="sm" icon={Plus} onClick={() => setAddChild(true)}>
                 Add sub-project
               </Button>

@@ -1,7 +1,7 @@
 import type { ProjectRole, Workflow } from './types';
 
 /** Mirrors the server rule: owners/admins are never restricted; roles without rules may use any status. */
-export function isTransitionAllowed(workflow: Workflow | undefined, role: ProjectRole | undefined, from: string | null, to: string): boolean {
+export function isTransitionAllowed(workflow: Workflow | undefined, role: ProjectRole | null | undefined, from: string | null, to: string): boolean {
   if (!role || role === 'viewer') return false;
   if (role === 'owner' || !from || from === to) return true;
   const rules = workflow?.[role];

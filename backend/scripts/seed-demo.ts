@@ -189,6 +189,54 @@ async function main() {
     previous = taskId;
   }
 
+  // Phases 4 & 5: estimates, a project hourly rate, time logged, material costs and a budget.
+  type CostTypeRow = { _id: string; name: string };
+  const ws4 = await call<{ activities: { _id: string; name: string }[]; costTypes: CostTypeRow[] }>('/work-settings');
+  const wanted = [
+    { name: 'Gypsum board', unit: 'sheet', unitRate: 450, color: '#64748b' },
+    { name: 'Paint', unit: 'litre', unitRate: 320, color: '#0ea5e9' },
+    { name: 'Electrical cable', unit: 'metre', unitRate: 85, color: '#f59e0b' },
+  ];
+  let costTypes = ws4.costTypes;
+  for (const t of wanted) {
+    // Cost types are organisation-wide: reuse them if they already exist.
+    if (!costTypes.some((c) => c.name === t.name)) costTypes = (await call<{ costTypes: CostTypeRow[] }>('/work-settings/cost-types', 'POST', t)).costTypes;
+  }
+  const costType = (n: string) => costTypes.find((c) => c.name === n)!._id;
+  const activity = (n: string) => ws4.activities.find((a) => a.name === n)?._id ?? null;
+
+  await call(`${base}/rates`, 'POST', { user: me.user._id, rate: 1500, validFrom: day(-60) });
+  const estimates: Record<string, number> = { 'Detailed drawings': 48, Demolition: 24, 'Partitions & ceilings': 64, Flooring: 40, 'Electrical wiring': 48 };
+  for (const [taskName, work] of Object.entries(estimates)) {
+    await call(`${base}/tasks/${ids[taskName]}`, 'PATCH', { work, remainingWork: Math.round(work * 0.6) });
+  }
+  const { budget } = await call<{ budget: { _id: string } }>(`${base}/budgets`, 'POST', {
+    name: 'Civil & interiors',
+    description: 'Approved budget for partitions, ceilings, flooring and finishes.',
+    labor: [
+      { label: 'Site engineer', user: me.user._id, hours: 120, rate: 1500 },
+      { label: 'Carpentry crew', hours: 200, rate: 650 },
+    ],
+    material: [
+      { costType: costType('Gypsum board'), units: 180 },
+      { costType: costType('Paint'), units: 240 },
+    ],
+  });
+  for (const taskName of ['Partitions & ceilings', 'Flooring', 'Demolition']) await call(`${base}/tasks/${ids[taskName]}`, 'PATCH', { budget: budget._id });
+  const logs: [string, string, number, string, string][] = [
+    ['Site survey', 'Site work', 6, day(0), 'Measured the floor plate with Rahul'],
+    ['Concept design', 'Design', 7.5, day(2), 'Layout options A and B'],
+    ['Concept design', 'Meetings', 2, day(4), 'Review with the client'],
+    ['Detailed drawings', 'Design', 8, day(8), 'Reflected ceiling plan'],
+    ['Demolition', 'Site work', 5, day(9), 'Supervised strip-out'],
+    ['Order furniture', 'Procurement', 3, day(9), 'Requested three quotations'],
+  ];
+  for (const [taskName, act, hours, date, comment] of logs) {
+    await call('/time-entries', 'POST', { project: project._id, task: ids[taskName], activity: activity(act), date, hours, comment });
+  }
+  await call(`${base}/cost-entries`, 'POST', { costType: costType('Gypsum board'), units: 60, date: day(9), task: ids['Partitions & ceilings'], comment: 'First delivery' });
+  await call(`${base}/cost-entries`, 'POST', { costType: costType('Electrical cable'), units: 400, date: day(9), task: ids['Electrical wiring'], comment: 'FR cable, 2.5 sq mm' });
+
   console.log(`Done. Sign in as ${email}: open "${DEMO_PROJECTS.program}" or "${DEMO_PROJECTS.fitOut}".`);
   console.log('Remove the demo data later with: npm run seed:cleanup -- <apiUrl> <email> <password> --yes');
 }

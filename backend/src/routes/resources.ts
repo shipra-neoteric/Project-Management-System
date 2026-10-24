@@ -21,13 +21,13 @@ resourcesRouter.get('/', loadProject('viewer'), async (req, res) => {
   res.json({ resources });
 });
 
-resourcesRouter.post('/', loadProject('member'), async (req, res) => {
+resourcesRouter.post('/', loadProject('manage_resources'), async (req, res) => {
   const body = parseBody(resourceSchema, req.body);
   const resource = await Resource.create({ ...body, user: body.user ?? null, project: req.project!._id });
   res.status(201).json({ resource });
 });
 
-resourcesRouter.patch('/:resourceId', loadProject('member'), async (req, res) => {
+resourcesRouter.patch('/:resourceId', loadProject('manage_resources'), async (req, res) => {
   const body = parseBody(resourceSchema.partial(), req.body);
   const resource = await Resource.findOneAndUpdate(
     { _id: assertObjectId(req.params.resourceId, 'Resource'), project: req.project!._id },
@@ -38,7 +38,7 @@ resourcesRouter.patch('/:resourceId', loadProject('member'), async (req, res) =>
   res.json({ resource });
 });
 
-resourcesRouter.delete('/:resourceId', loadProject('member'), async (req, res) => {
+resourcesRouter.delete('/:resourceId', loadProject('manage_resources'), async (req, res) => {
   const id = assertObjectId(req.params.resourceId, 'Resource');
   const deleted = await Resource.findOneAndDelete({ _id: id, project: req.project!._id });
   if (!deleted) throw notFound('Resource');

@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { z } from 'zod';
-import { accessFilter, loadProject, roleFor, ROLE_RANK } from '../middleware/projectAccess';
+import { accessFilter, loadProject } from '../middleware/projectAccess';
+import { Group } from '../models/Access';
+import { accessFor, can, hasGlobal, projectPeopleIds, roleInfo } from '../services/permissions';
 import { Baseline } from '../models/Baseline';
+import { Budget, CostEntry, HourlyRate, TimeEntry } from '../models/Finance';
 import { Journal } from '../models/Journal';
 import { Notification } from '../models/Notification';
-import { MEMBER_ROLES, Project, PROJECT_KINDS, PROJECT_MODULES, PROJECT_STATUSES, type ProjectDoc } from '../models/Project';
+import { PROGRESS_MODES, Project, PROJECT_KINDS, PROJECT_MODULES, PROJECT_STATUSES, type ProjectDoc } from '../models/Project';
 import { Resource } from '../models/Resource';
 import { Task } from '../models/Task';
 import { User } from '../models/User';
@@ -74,18 +77,15 @@ const updateSchema = z.object({
     .max(30)
     .optional(),
   customValues: z.record(z.string(), z.unknown()).optional(),
+  progressMode: z.enum(PROGRESS_MODES).optional(),
 });
 
-const isPerson = (project: ProjectDoc) => (userId: string) =>
-  String(project.owner) === userId || project.members.some((m) => String(m.user) === userId);
-
-/** Parent must be visible with at least member rights, and must not create a cycle. */
-async function assertValidParent(parentId: string, user: Parameters<typeof roleFor>[1], selfId?: Types.ObjectId) {
+/** Parent must be visible with the "add sub-projects" permission, and must not create a cycle. */
+async function assertValidParent(parentId: string, user: Parameters<typeof accessFor>[1], selfId?: Types.ObjectId) {
   const parent = await Project.findById(parentId);
   if (!parent) throw notFound('Parent project');
-  const role = roleFor(parent, user);
-  if (!role) throw notFound('Parent project');
-  if (ROLE_RANK[role] < ROLE_RANK.member) throw forbidden('You need at least the member role on the parent to add sub-projects');
+  if (!accessFor(parent, user)) throw notFound('Parent project');
+  if (!can(parent, user, 'add_subprojects')) throw forbidden('You need permission to add sub-projects to the parent project');
   if (selfId) {
     let cursor: ProjectDoc | null = parent;
     for (let i = 0; cursor && i < 50; i++) {
@@ -167,7 +167,10 @@ projectsRouter.get('/', async (req, res) => {
   res.json({
     projects: list.map((p, i) => ({
       ...p,
-      myRole: roleFor(projects[i], req.user!),
+      ...(() => {
+        const a = accessFor(projects[i], req.user!);
+        return { myRole: a?.role ?? null, myRoleName: a?.roleName ?? '', myPermissions: [...(a?.permissions ?? [])] };
+      })(),
       favorite: favorites.has(String(p._id)),
       rollup: roll.get(String(p._id)),
     })),
@@ -176,14 +179,14 @@ projectsRouter.get('/', async (req, res) => {
 
 projectsRouter.post('/', async (req, res) => {
   const body = parseBody(createSchema, req.body);
+  if (!hasGlobal(req.user!, 'create_projects')) throw forbidden('You don’t have permission to create projects. Ask an administrator.');
   if (body.parent) await assertValidParent(body.parent, req.user!);
 
   let source: ProjectDoc | null = null;
   if (body.fromProject) {
     source = await Project.findById(body.fromProject);
-    const role = source ? roleFor(source, req.user!) : null;
-    if (!source || !role) throw notFound('Template');
-    if (!source.isTemplate && ROLE_RANK[role] < ROLE_RANK.manager) throw forbidden('Copying a project needs the manager role on it');
+    if (!source || !accessFor(source, req.user!)) throw notFound('Template');
+    if (!source.isTemplate && !can(source, req.user!, 'manage_project')) throw forbidden('Copying a project needs permission to manage it');
   }
 
   const catalog = await getCatalog();
@@ -202,7 +205,8 @@ projectsRouter.post('/', async (req, res) => {
     updatedBy: req.user!._id,
   });
   if (body.customValues) {
-    project.customValues = cleanCustomValues(catalog, 'project', body.customValues, {}, isPerson(project));
+    const people = await projectPeopleIds(project);
+    project.customValues = cleanCustomValues(catalog, 'project', body.customValues, {}, (id) => people.has(id));
     await project.save();
   }
   if (source) await copyProjectContent(source, project, req.user!, body.copy);
@@ -238,7 +242,8 @@ projectsRouter.patch('/:id', loadProject('manager', { allowArchived: true }), as
     if (removed.length) await Task.updateMany({ project: project._id, category: { $in: removed } }, { $set: { category: null } });
   }
   if (customValues) {
-    project.customValues = cleanCustomValues(await getCatalog(), 'project', customValues, project.customValues ?? {}, isPerson(project));
+    const people = await projectPeopleIds(project);
+    project.customValues = cleanCustomValues(await getCatalog(), 'project', customValues, project.customValues ?? {}, (id) => people.has(id));
     project.markModified('customValues');
   }
   if (lifecycle) {
@@ -261,6 +266,10 @@ projectsRouter.delete('/:id', loadProject('owner', { allowArchived: true }), asy
     Journal.deleteMany({ project: id }),
     Notification.deleteMany({ project: id }),
     Baseline.deleteMany({ project: id }),
+    TimeEntry.deleteMany({ project: id }),
+    CostEntry.deleteMany({ project: id }),
+    Budget.deleteMany({ project: id }),
+    HourlyRate.deleteMany({ project: id }),
     // Sub-projects move up to this project's parent.
     Project.updateMany({ parent: id }, { $set: { parent: req.project!.parent ?? null } }),
     User.updateMany({ favorites: id }, { $pull: { favorites: id } }),
@@ -276,7 +285,8 @@ projectsRouter.post('/:id/copy', loadProject('viewer'), async (req, res) => {
     req.body,
   );
   const source = req.project!;
-  if (!source.isTemplate && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) throw forbidden('Copying a project needs the manager role on it');
+  if (!hasGlobal(req.user!, 'create_projects')) throw forbidden('You don’t have permission to create projects');
+  if (!source.isTemplate && !req.permissions?.has('manage_project')) throw forbidden('Copying a project needs permission to manage it');
   if (body.parent) await assertValidParent(body.parent, req.user!);
   const project = await Project.create({
     name: body.name,
@@ -432,40 +442,58 @@ projectsRouter.delete('/:id/baseline', loadProject('manager'), async (req, res) 
   );
 });
 
-// ---- Members --------------------------------------------------------------------------------
+// ---- Members (users or groups, built-in or custom roles) ---------------------------------------
 
-const memberSchema = z.object({
-  userId: z.string().refine((v) => Types.ObjectId.isValid(v), 'Invalid user'),
-  role: z.enum(MEMBER_ROLES),
-});
+const memberSchema = z
+  .object({
+    userId: objectId.optional(),
+    groupId: objectId.optional(),
+    role: z.string().min(1).max(40),
+  })
+  .refine((v) => !!v.userId !== !!v.groupId, 'Choose a person or a group');
 
-projectsRouter.post('/:id/members', loadProject('manager'), async (req, res) => {
+function assertRole(role: string) {
+  if (role === 'owner' || !roleInfo(role)) throw badRequest('Unknown role');
+}
+
+const memberId = (m: { user?: unknown; group?: unknown }) => String((m.user ?? m.group) as Types.ObjectId);
+
+projectsRouter.post('/:id/members', loadProject('manage_members'), async (req, res) => {
   const body = parseBody(memberSchema, req.body);
+  assertRole(body.role);
   const project = req.project!;
-  const user = await User.findById(body.userId);
-  if (!user || !user.isActive) throw notFound('User');
-  if (project.owner.toString() === body.userId) throw badRequest('The owner already has full access');
-  if (project.members.some((m) => m.user.toString() === body.userId)) throw conflict(`${user.name} is already a member`);
-  project.members.push({ user: user._id, role: body.role });
+  if (body.userId) {
+    const user = await User.findById(body.userId);
+    if (!user || !user.isActive) throw notFound('User');
+    if (project.owner.toString() === body.userId) throw badRequest('The owner already has full access');
+    if (project.members.some((m) => m.user && String(m.user) === body.userId)) throw conflict(`${user.name} is already a member`);
+    project.members.push({ user: user._id, group: null, role: body.role });
+  } else {
+    const group = await Group.findById(body.groupId);
+    if (!group) throw notFound('Group');
+    if (project.members.some((m) => m.group && String(m.group) === body.groupId)) throw conflict(`${group.name} is already a member`);
+    project.members.push({ user: null, group: group._id, role: body.role });
+  }
   await project.save();
   res.status(201).json({ project: await serializeProject(project, req.user!) });
 });
 
-projectsRouter.patch('/:id/members/:userId', loadProject('manager'), async (req, res) => {
-  const { role } = parseBody(memberSchema.pick({ role: true }), req.body);
+projectsRouter.patch('/:id/members/:memberId', loadProject('manage_members'), async (req, res) => {
+  const { role } = parseBody(z.object({ role: z.string().min(1).max(40) }), req.body);
+  assertRole(role);
   const project = req.project!;
-  const member = project.members.find((m) => m.user.toString() === assertObjectId(req.params.userId, 'Member'));
+  const member = project.members.find((m) => memberId(m) === assertObjectId(req.params.memberId, 'Member'));
   if (!member) throw notFound('Member');
   member.role = role;
   await project.save();
   res.json({ project: await serializeProject(project, req.user!) });
 });
 
-projectsRouter.delete('/:id/members/:userId', loadProject('manager'), async (req, res) => {
+projectsRouter.delete('/:id/members/:memberId', loadProject('manage_members'), async (req, res) => {
   const project = req.project!;
-  const userId = assertObjectId(req.params.userId, 'Member');
+  const id = assertObjectId(req.params.memberId, 'Member');
   const before = project.members.length;
-  project.members.pull({ user: userId });
+  project.set('members', project.members.filter((m) => memberId(m) !== id));
   if (project.members.length === before) throw notFound('Member');
   await project.save();
   res.json({ project: await serializeProject(project, req.user!) });

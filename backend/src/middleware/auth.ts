@@ -1,7 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
+import type { GlobalPermission } from '../models/Access';
 import { User, type UserDoc } from '../models/User';
+import { attachAccess, hasGlobal, loadRoles } from '../services/permissions';
 import { forbidden, HttpError } from '../utils/http';
 
 const unauthenticated = (message = 'Please sign in') => new HttpError(401, 'UNAUTHENTICATED', message);
@@ -26,7 +28,9 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 
   const user = await User.findById(userId);
-  if (!user || !user.isActive) throw unauthenticated('Your account is not active');
+  if (!user || !user.isActive || user.kind === 'placeholder') throw unauthenticated('Your account is not active');
+  await loadRoles();
+  await attachAccess(user);
   req.user = user;
   next();
 }
@@ -34,4 +38,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (req.user?.role !== 'Admin') throw forbidden('Only administrators can do this');
   next();
+}
+
+/** Requires an organisation-wide permission (administrators always pass). */
+export function requireGlobal(perm: GlobalPermission) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user || !hasGlobal(req.user, perm)) throw forbidden('You don’t have permission to do this');
+    next();
+  };
 }

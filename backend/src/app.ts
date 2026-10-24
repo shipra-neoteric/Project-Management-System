@@ -18,6 +18,9 @@ import { attachmentsRouter } from './routes/attachments';
 import { notificationsRouter } from './routes/notifications';
 import { projectViewsRouter } from './routes/projectViews';
 import { taskActivityRouter } from './routes/taskActivity';
+import { accessRouter } from './routes/access';
+import { financeRouter } from './routes/finance';
+import { timeRouter } from './routes/time';
 
 export function createApp() {
   const app = express();
@@ -58,7 +61,10 @@ export function createApp() {
   app.use('/api/search', requireAuth, searchRouter);
   app.use('/api/notifications', requireAuth, notificationsRouter);
   app.use('/api/project-views', requireAuth, projectViewsRouter);
+  app.use('/api/projects/:id', requireAuth, financeRouter);
   app.use('/api/projects', requireAuth, projectsRouter);
+  app.use('/api', requireAuth, timeRouter);
+  app.use('/api', requireAuth, accessRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -1,6 +1,6 @@
 import type { Types } from 'mongoose';
 import { env } from '../config/env';
-import { roleFor } from '../middleware/projectAccess';
+import { attachAccessMany, roleFor } from './permissions';
 import { Journal, type JournalKind } from '../models/Journal';
 import { Notification, NOTIFICATION_REASONS, type NotificationReason } from '../models/Notification';
 import type { ProjectDoc } from '../models/Project';
@@ -147,7 +147,8 @@ async function notify(
 ) {
   const entries = recipients.entries().filter(([id]) => id !== actor._id.toString());
   if (!entries.length) return;
-  const users = await User.find({ _id: { $in: entries.map(([id]) => id) }, isActive: true });
+  const users = await User.find({ _id: { $in: entries.map(([id]) => id) }, isActive: true, kind: { $ne: 'placeholder' }, invited: { $ne: true } });
+  await attachAccessMany(users);
   const byId = new Map(users.map((u) => [u._id.toString(), u]));
   const allowed = entries.filter(([id]) => {
     const u = byId.get(id);
@@ -172,7 +173,7 @@ async function notify(
   const link = `${env.appUrl}/projects/${project._id}${task._id ? `?task=${task._id}` : ''}`;
   for (const [id, reason] of allowed) {
     const u = byId.get(id)!;
-    if (u.notifyByEmail === false) continue;
+    if (u.notifyByEmail === false || !u.email) continue;
     const title = `${actor.name} ${REASON_TEXT[reason]} "${task.name}"`;
     const { text, html } = renderEmail(title, [`Project: ${project.name}`, summary].filter(Boolean), { label: 'Open task', url: link });
     void sendMail({ to: u.email, subject: `[${project.name}] ${title}`, text, html });

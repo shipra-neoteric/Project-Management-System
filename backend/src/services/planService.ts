@@ -1,15 +1,17 @@
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
+import { TimeEntry } from '../models/Finance';
+import { getCatalog } from './catalog';
 import type { ProjectDoc } from '../models/Project';
 import { Task, type PlanTask } from '../models/Task';
 import type { UserDoc } from '../models/User';
-import { roleFor } from '../middleware/projectAccess';
+import { accessFor } from './permissions';
 import { todayISO } from '../scheduling/calendar';
 import { schedule } from '../scheduling/scheduler';
 
 /** Fields persisted for each task (everything except identity/audit timestamps). */
 const PERSISTED_FIELDS = [
   'parent', 'order', 'name', 'duration', 'constraintStart', 'percentComplete', 'predecessors', 'resources', 'notes',
-  'type', 'status', 'priority', 'assignee', 'accountable', 'category', 'watchers', 'number', 'manual', 'relations', 'customValues', 'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
+  'type', 'status', 'priority', 'assignee', 'accountable', 'category', 'watchers', 'number', 'manual', 'relations', 'customValues', 'work', 'remainingWork', 'budget', 'baselineStart', 'baselineFinish', 'start', 'finish', 'isSummary', 'isMilestone', 'isCritical', 'totalSlack', 'wbs',
   'outlineLevel', 'rowNumber', 'updatedBy',
 ] as const;
 
@@ -34,7 +36,62 @@ export function normalizeOrders(tasks: PlanTask[]): void {
 
 export interface PlanResponse {
   project: Record<string, unknown>;
-  tasks: PlanTask[];
+  tasks: (PlanTask & { spentHours?: number })[];
+}
+
+/** Adds `spentHours` (logged time, rolled up to summary tasks) to each task — not stored on the task. */
+export async function withSpentHours<T extends PlanTask>(projectId: Types.ObjectId, tasks: T[]): Promise<(T & { spentHours: number })[]> {
+  const rows = await TimeEntry.aggregate<{ _id: Types.ObjectId; hours: number }>([
+    { $match: { project: new Types.ObjectId(String(projectId)), task: { $ne: null } } },
+    { $group: { _id: '$task', hours: { $sum: '$hours' } } },
+  ]);
+  const own = new Map(rows.map((r) => [String(r._id), r.hours]));
+  const total = new Map<string, number>();
+  // Deepest tasks first so children are summed before their parents.
+  for (const t of [...tasks].sort((a, b) => b.outlineLevel - a.outlineLevel)) {
+    const id = String(t._id);
+    total.set(id, (total.get(id) ?? 0) + (own.get(id) ?? 0));
+    if (t.parent) total.set(String(t.parent), (total.get(String(t.parent)) ?? 0) + total.get(id)!);
+  }
+  return tasks.map((t) => ({ ...t, spentHours: Math.round((total.get(String(t._id)) ?? 0) * 100) / 100 }));
+}
+
+/**
+ * Progress modes: "work" derives % complete from work vs remaining work, "status" from the
+ * status' % done. Runs before scheduling so summaries roll the result up.
+ */
+async function applyProgressMode(project: ProjectDoc, tasks: PlanTask[]) {
+  const parents = new Set(tasks.filter((t) => t.parent).map((t) => String(t.parent)));
+  const mode = project.progressMode ?? 'manual';
+  const percentDone = mode === 'status' ? new Map((await getCatalog()).statuses.map((st) => [String(st._id), st.percentDone])) : null;
+  for (const t of tasks) {
+    if (parents.has(String(t._id))) continue;
+    if (mode === 'work' && t.work && t.work > 0 && t.remainingWork != null) {
+      t.percentComplete = Math.round(((t.work - Math.min(t.remainingWork, t.work)) / t.work) * 100);
+    } else if (mode === 'status' && t.status) {
+      const pct = percentDone?.get(String(t.status));
+      if (pct != null) t.percentComplete = pct;
+    }
+  }
+}
+
+/** Summary tasks total the work and remaining work of their children (null when nobody estimated). */
+function rollUpWork(tasks: PlanTask[], mode: string) {
+  const children = new Map<string, PlanTask[]>();
+  for (const t of tasks) if (t.parent) {
+    const k = String(t.parent);
+    if (!children.has(k)) children.set(k, []);
+    children.get(k)!.push(t);
+  }
+  for (const t of [...tasks].sort((a, b) => b.outlineLevel - a.outlineLevel)) {
+    const kids = children.get(String(t._id));
+    if (!kids?.length) continue;
+    const estimated = kids.filter((k) => k.work != null);
+    t.work = estimated.length ? estimated.reduce((a, k) => a + (k.work ?? 0), 0) : null;
+    const withRemaining = kids.filter((k) => k.remainingWork != null);
+    t.remainingWork = withRemaining.length ? withRemaining.reduce((a, k) => a + (k.remainingWork ?? 0), 0) : null;
+    if (mode === 'work' && t.work && t.remainingWork != null) t.percentComplete = Math.round(((t.work - t.remainingWork) / t.work) * 100);
+  }
 }
 
 /**
@@ -59,6 +116,7 @@ export async function mutatePlan(
     if (t.number == null) t.number = project.taskSeq = (project.taskSeq ?? 0) + 1;
     if (t.parent && !ids.has(t.parent.toString())) t.parent = null;
   }
+  await applyProgressMode(project, working);
 
   const out = schedule(
     { startDate: project.startDate, workingDays: project.workingDays, holidays: project.holidays },
@@ -76,6 +134,7 @@ export async function mutatePlan(
   );
 
   for (const t of working) Object.assign(t, out.results.get(t._id.toString()));
+  rollUpWork(working, project.progressMode ?? 'manual');
 
   // ---- Persist the diff -------------------------------------------------------------------
   const removed = [...before.keys()].filter((id) => !ids.has(id));
@@ -113,19 +172,23 @@ export async function mutatePlan(
   await project.save();
 
   working.sort((a, b) => a.rowNumber - b.rowNumber);
-  return { project: await serializeProject(project, user), tasks: working };
+  return { project: await serializeProject(project, user), tasks: await withSpentHours(project._id, working) };
 }
 
 /** Project JSON with owner/members populated and the caller's role. */
 export async function serializeProject(project: ProjectDoc, user: UserDoc) {
   await project.populate([
     { path: 'owner', select: 'name email' },
-    { path: 'members.user', select: 'name email' },
+    { path: 'members.user', select: 'name email kind invited' },
+    { path: 'members.group', select: 'name members', populate: { path: 'members', select: 'name email kind' } },
     { path: 'parent', select: 'name key kind' },
   ]);
+  const access = accessFor(project, user);
   return {
     ...project.toJSON(),
-    myRole: roleFor(project, user),
+    myRole: access?.role ?? null,
+    myRoleName: access?.roleName ?? '',
+    myPermissions: [...(access?.permissions ?? [])],
     favorite: (user.favorites ?? []).some((f) => String(f) === String(project._id)),
   };
 }

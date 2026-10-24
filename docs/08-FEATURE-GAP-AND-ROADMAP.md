@@ -1,6 +1,6 @@
 # 08 — Feature Gap Analysis & Roadmap
 
-_Updated after Phases 1, 2 and 3 were completed._
+_Updated after Phases 1 to 5 were completed._
 
 Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 dev) and our **Project Management System (PMS) v1**. The inventory comes from scanning OpenProject's 31 feature modules, ~150 permissions, ~170 data models and ~45 API endpoint groups, grouped into user-facing features.
 
@@ -9,10 +9,10 @@ Comparison between **OpenProject** (the `openproject-dev` source, version 18.0 d
 | | Count |
 |---|---|
 | Features inventoried | **100** |
-| ✅ Done in PMS | **55** |
-| 🟡 Partially done | **5** |
-| ❌ Missing | **40** |
-| **Coverage today** (partial counts as half) | **58%** |
+| ✅ Done in PMS | **71** |
+| 🟡 Partially done | **4** |
+| ❌ Missing | **25** |
+| **Coverage today** (partial counts as half) | **73%** |
 
 **Where PMS is already ahead of OpenProject:** OpenProject schedules only with Finish-to-Start ("precedes/follows") links and has no critical path. PMS supports all four MS Project link types (FS/SS/FF/SF) and calculates the critical path and total slack, so for *scheduling* it is closer to MS Project than OpenProject is.
 
@@ -24,12 +24,12 @@ Phases are ordered by **leverage**: each one lays a foundation that later phases
 
 | Phase | Theme | Progress | Coverage after phase | Rough effort* |
 |---|---|---|---|---|
-| Now | Current PMS | — | **58%** | — |
-| 1 | Real team task management | ✅ Complete | **58%** | done |
-| 2 | Views, filters & interactive planning | ✅ Complete | **58%** | done |
-| 3 | Projects & portfolio | ✅ Complete | **58%** | done |
-| 4 | Time, cost & budgets | Planned | **64%** | 3-4 weeks |
-| 5 | Resources & permissions | Planned | **73%** | 4-5 weeks |
+| Now | Current PMS | — | **73%** | — |
+| 1 | Real team task management | ✅ Complete | **73%** | done |
+| 2 | Views, filters & interactive planning | ✅ Complete | **73%** | done |
+| 3 | Projects & portfolio | ✅ Complete | **73%** | done |
+| 4 | Time, cost & budgets | ✅ Complete | **73%** | done |
+| 5 | Resources & permissions | ✅ Complete | **73%** | done |
 | 6 | Agile & collaboration | Planned | **84%** | 6-8 weeks |
 | 7 | Enterprise security & platform | Planned | **93%** | 5-7 weeks |
 | 8 | Integrations & intelligence | Planned | **100%** | 6-10 weeks |
@@ -40,7 +40,7 @@ Phases are ordered by **leverage**: each one lays a foundation that later phases
 
 ### Phase 1 — Real team task management
 
-Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **58%**.
+Turns the planner into a tool a team works in every day: types, statuses, owners, comments, files, notifications. Coverage after this phase: **73%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
@@ -58,7 +58,7 @@ Turns the planner into a tool a team works in every day: types, statuses, owners
 
 ### Phase 2 — Views, filters & interactive planning
 
-One query engine powers table, board, calendar and search; the Gantt becomes drag-and-drop. Coverage after this phase: **58%**.
+One query engine powers table, board, calendar and search; the Gantt becomes drag-and-drop. Coverage after this phase: **73%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
@@ -76,7 +76,7 @@ One query engine powers table, board, calendar and search; the Gantt becomes dra
 
 ### Phase 3 — Projects & portfolio
 
-Subprojects, templates, custom fields and portfolio dashboards for management. Coverage after this phase: **58%**.
+Subprojects, templates, custom fields and portfolio dashboards for management. Coverage after this phase: **73%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
@@ -97,17 +97,17 @@ Subprojects, templates, custom fields and portfolio dashboards for management. C
 
 ### Phase 4 — Time, cost & budgets
 
-Timesheets, rates, budgets and cost reports; progress measured by work. Coverage after this phase: **64%**.
+Timesheets, rates, budgets and cost reports; progress measured by work. Coverage after this phase: **73%**.
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
-| Work, remaining work & progress modes (work/status based) | Scheduling & Gantt | ❌ Missing | `progress_tracking settings` |
-| Native Excel (XLSX) export | Views & reporting | ❌ Missing | `modules/xls_export` |
-| Time logging (timesheets, activities) | Time, cost & budgets | ❌ Missing | `costs: time_entry` |
-| Hourly rates (default & per project) | Time, cost & budgets | ❌ Missing | `hourly_rate` |
-| Cost types & cost entries | Time, cost & budgets | ❌ Missing | `cost_type, cost_entry` |
-| Budgets (labor & material) | Time, cost & budgets | ❌ Missing | `modules/budgets` |
-| Cost & time reports | Time, cost & budgets | ❌ Missing | `modules/reporting` |
+| Work, remaining work & progress modes (work/status based) | Scheduling & Gantt | ✅ Done | `progress_tracking settings` |
+| Native Excel (XLSX) export | Views & reporting | ✅ Done | `modules/xls_export` |
+| Time logging (timesheets, activities) | Time, cost & budgets | ✅ Done | `costs: time_entry` |
+| Hourly rates (default & per project) | Time, cost & budgets | ✅ Done | `hourly_rate` |
+| Cost types & cost entries | Time, cost & budgets | ✅ Done | `cost_type, cost_entry` |
+| Budgets (labor & material) | Time, cost & budgets | ✅ Done | `modules/budgets` |
+| Cost & time reports | Time, cost & budgets | ✅ Done | `modules/reporting` |
 
 ### Phase 5 — Resources & permissions
 
@@ -115,15 +115,15 @@ Resource planner, team planner, groups and fully configurable roles. Coverage af
 
 | Feature | Area | Today | OpenProject source |
 |---|---|---|---|
-| Team planner | Views & reporting | ❌ Missing | `modules/team_planner` |
-| Configurable roles (~150 permissions) | Team & permissions | ❌ Missing | `role, role_permission` |
-| Global roles | Team & permissions | ❌ Missing | `global_role` |
-| Groups | Team & permissions | ❌ Missing | `group` |
-| Placeholder users | Team & permissions | ❌ Missing | `placeholder_user` |
-| Invite users by email | Team & permissions | ❌ Missing | `invite_members_by_email` |
-| Workload / over-allocation | Resources | 🟡 Partial — PMS: simple count | `resource_management` |
-| Resource allocation planner | Resources | ❌ Missing | `resource_allocation, resource_planner` |
-| Personal working hours & time off | Resources | ❌ Missing | `user_working_hours, user_non_working_time` |
+| Team planner | Views & reporting | ✅ Done | `modules/team_planner` |
+| Configurable roles (~150 permissions) | Team & permissions | ✅ Done | `role, role_permission` |
+| Global roles | Team & permissions | ✅ Done | `global_role` |
+| Groups | Team & permissions | ✅ Done | `group` |
+| Placeholder users | Team & permissions | ✅ Done | `placeholder_user` |
+| Invite users by email | Team & permissions | ✅ Done | `invite_members_by_email` |
+| Workload / over-allocation | Resources | ✅ Done | `resource_management` |
+| Resource allocation planner | Resources | ✅ Done | `resource_allocation, resource_planner` |
+| Personal working hours & time off | Resources | ✅ Done | `user_working_hours, user_non_working_time` |
 
 ### Phase 6 — Agile & collaboration
 
@@ -194,7 +194,7 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Drag & resize bars on the Gantt | ✅ Done | 2 |  | `frontend gantt` |
 | Non-scheduling relations (relates, blocks, duplicates, includes, requires) | ✅ Done | 2 |  | `relation.rb` |
 | Graphical Gantt PDF export | ✅ Done | 2 |  | `pdf_export (gantt)` |
-| Work, remaining work & progress modes (work/status based) | ❌ Missing | 4 |  | `progress_tracking settings` |
+| Work, remaining work & progress modes (work/status based) | ✅ Done | 4 |  | `progress_tracking settings` |
 
 ### Work packages
 
@@ -225,13 +225,13 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | Saved views: filters, sorting, grouping, columns | ✅ Done | 2 |  | `query, persisted_query` |
 | Kanban boards (status, assignee, version, subproject) | ✅ Done | 2 |  | `modules/boards` |
 | Calendar view | ✅ Done | 2 |  | `modules/calendar` |
-| Team planner | ❌ Missing | 5 |  | `modules/team_planner` |
+| Team planner | ✅ Done | 5 |  | `modules/team_planner` |
 | Global search | ✅ Done | 2 |  | `search_project` |
 | Dashboard | ✅ Done | 3 |  | `my_page, overviews` |
 | Charts & graph widgets | ✅ Done | 3 |  | `work_packages_graph` |
 | CSV export | ✅ Done | — |  | `exports/csv` |
 | PDF report export | ✅ Done | — |  | `pdf_export` |
-| Native Excel (XLSX) export | ❌ Missing | 4 |  | `modules/xls_export` |
+| Native Excel (XLSX) export | ✅ Done | 4 |  | `modules/xls_export` |
 | Import (CSV / MS Project XML / Jira) | ❌ Missing | 8 |  | `import_work_packages` |
 
 ### Projects & portfolio
@@ -256,30 +256,30 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 | User registration & sign-in | ✅ Done | — |  | `user` |
 | Admin user management (role, deactivate) | ✅ Done | — |  | `manage_user` |
 | Project members with roles | ✅ Done | — | PMS: 4 fixed roles | `member, member_role` |
-| Configurable roles (~150 permissions) | ❌ Missing | 5 |  | `role, role_permission` |
-| Global roles | ❌ Missing | 5 |  | `global_role` |
-| Groups | ❌ Missing | 5 |  | `group` |
-| Placeholder users | ❌ Missing | 5 |  | `placeholder_user` |
-| Invite users by email | ❌ Missing | 5 |  | `invite_members_by_email` |
+| Configurable roles (~150 permissions) | ✅ Done | 5 |  | `role, role_permission` |
+| Global roles | ✅ Done | 5 |  | `global_role` |
+| Groups | ✅ Done | 5 |  | `group` |
+| Placeholder users | ✅ Done | 5 |  | `placeholder_user` |
+| Invite users by email | ✅ Done | 5 |  | `invite_members_by_email` |
 
 ### Time, cost & budgets
 
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
-| Time logging (timesheets, activities) | ❌ Missing | 4 |  | `costs: time_entry` |
-| Hourly rates (default & per project) | ❌ Missing | 4 |  | `hourly_rate` |
-| Cost types & cost entries | ❌ Missing | 4 |  | `cost_type, cost_entry` |
-| Budgets (labor & material) | ❌ Missing | 4 |  | `modules/budgets` |
-| Cost & time reports | ❌ Missing | 4 |  | `modules/reporting` |
+| Time logging (timesheets, activities) | ✅ Done | 4 |  | `costs: time_entry` |
+| Hourly rates (default & per project) | ✅ Done | 4 |  | `hourly_rate` |
+| Cost types & cost entries | ✅ Done | 4 |  | `cost_type, cost_entry` |
+| Budgets (labor & material) | ✅ Done | 4 |  | `modules/budgets` |
+| Cost & time reports | ✅ Done | 4 |  | `modules/reporting` |
 
 ### Resources
 
 | Feature | Status | Phase | Notes | OpenProject source |
 |---|---|---|---|---|
 | Resource list & assignment to tasks | ✅ Done | — |  | `assigned_to` |
-| Workload / over-allocation | 🟡 Partial | 5 | PMS: simple count | `resource_management` |
-| Resource allocation planner | ❌ Missing | 5 |  | `resource_allocation, resource_planner` |
-| Personal working hours & time off | ❌ Missing | 5 |  | `user_working_hours, user_non_working_time` |
+| Workload / over-allocation | ✅ Done | 5 |  | `resource_management` |
+| Resource allocation planner | ✅ Done | 5 |  | `resource_allocation, resource_planner` |
+| Personal working hours & time off | ✅ Done | 5 |  | `user_working_hours, user_non_working_time` |
 
 ### Agile
 
@@ -335,7 +335,7 @@ Git, file storage, iCal, imports, automations, AI, BIM. Coverage after this phas
 ## 5. Recommendation
 
 - **Phases 1–3** make PMS a credible in-house replacement for MS Project *and* for what most teams use OpenProject for day to day.
-- **Phase 4** matters if the business wants hours and costs tracked against budgets.
-- **Phases 5–8** are about scale and enterprise integration (for example SSO with Nexora, file storage, Git). Build individual items when there is a concrete need rather than all of them.
+- **Phases 4–5** (done) add time and cost tracking against budgets, team and resource planning, and configurable roles, groups and invitations.
+- **Phases 6–8** are about agile boards, scale and enterprise integration (for example SSO with Nexora, file storage, Git). Build individual items when there is a concrete need rather than all of them.
 - **BIM/BCF** (Phase 8) is the one niche module worth evaluating for a real-estate business: it links tasks to 3D building models.
 

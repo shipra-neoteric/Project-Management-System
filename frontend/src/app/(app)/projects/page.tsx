@@ -16,9 +16,11 @@ import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/cn';
-import { fmtDate, todayISO } from '@/lib/dates';
+import { fmtDate } from '@/lib/dates';
 import { EMPTY_CONFIG, formatCustomValue } from '@/lib/query';
-import { atLeast, KIND_LABEL, PROJECT_ROLE, PROJECT_STATUS } from '@/lib/status';
+import { KIND_LABEL, PROJECT_STATUS, roleBadge } from '@/lib/status';
+import { can, hasGlobal, projectPeople } from '@/lib/permissions';
+import { exportFileName, exportXlsx } from '@/lib/export';
 import { useTheme } from '@/lib/theme';
 import type { CustomField, Project, ProjectKind, ProjectStatus, SavedView, UserRef, ViewConfig } from '@/lib/types';
 
@@ -111,7 +113,7 @@ export default function ProjectsPage() {
     return out;
   }, [filtered, treeMode, collapsed]);
 
-  const people = (p: Project) => new Map<string, UserRef>([[p.owner?._id, p.owner], ...p.members.filter((m) => m.user).map((m) => [m.user._id, m.user] as [string, UserRef])]);
+  const people = (p: Project) => projectPeople(p) as Map<string, UserRef>;
   const allColumns = [...BASE_COLUMNS, ...projectFields.map((f) => ({ key: `cf:${f._id}`, label: f.name }))];
   const columns = allColumns.filter((c) => config.columns.includes(c.key));
 
@@ -145,7 +147,7 @@ export default function ProjectsPage() {
       case 'owner':
         return p.owner?.name;
       case 'role':
-        return <Badge tone={PROJECT_ROLE[p.myRole].tone}>{PROJECT_ROLE[p.myRole].label}</Badge>;
+        return <Badge tone={roleBadge(p.myRole, p.myRoleName).tone}>{roleBadge(p.myRole, p.myRoleName).label}</Badge>;
       default: {
         const f = projectFields.find((x) => `cf:${x._id}` === key);
         return f ? formatCustomValue(f, p.customValues?.[f._id], people(p)) : '';
@@ -153,7 +155,7 @@ export default function ProjectsPage() {
     }
   };
 
-  const exportCsv = () => {
+  const exportExcel = () => {
     const header = ['Key', 'Name', 'Type', 'Parent', ...columns.map((c) => c.label)];
     const text = (p: Project, key: string): string => {
       const r = p.rollup;
@@ -171,25 +173,18 @@ export default function ProjectsPage() {
         case 'owner':
           return p.owner?.name ?? '';
         case 'role':
-          return PROJECT_ROLE[p.myRole].label;
+          return roleBadge(p.myRole, p.myRoleName).label;
         default: {
           const f = projectFields.find((x) => `cf:${x._id}` === key);
           return f ? formatCustomValue(f, p.customValues?.[f._id], people(p)) : '';
         }
       }
     };
-    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    const lines = [header.join(',')];
-    for (const { project: p } of rows) {
+    const data = rows.map(({ project: p }) => {
       const parent = p.parent && typeof p.parent === 'object' ? p.parent.name : '';
-      lines.push([p.key, p.name, KIND_LABEL[p.kind], parent, ...columns.map((c) => text(p, c.key))].map((v) => esc(String(v ?? ''))).join(','));
-    }
-    const url = URL.createObjectURL(new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `projects-${todayISO()}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return [p.key, p.name, KIND_LABEL[p.kind], parent, ...columns.map((c) => text(p, c.key))];
+    });
+    void exportXlsx(exportFileName('Projects', 'xlsx'), [{ name: 'Projects', header, rows: data, widths: [8, 36, 10, 28, ...columns.map(() => 16)] }]);
   };
 
   const saveView = async (asNew = false) => {
@@ -229,9 +224,11 @@ export default function ProjectsPage() {
         title="Projects"
         subtitle="Portfolios, programs and projects you own or have been invited to"
         actions={
-          <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
-            New project
-          </Button>
+          hasGlobal(user, 'create_projects') && (
+            <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
+              New project
+            </Button>
+          )
         }
       />
 
@@ -294,7 +291,7 @@ export default function ProjectsPage() {
           </Button>
           <button
             type="button"
-            onClick={exportCsv}
+            onClick={exportExcel}
             disabled={!rows.length}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-800 rounded-md hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors disabled:opacity-40"
           >
@@ -395,8 +392,8 @@ export default function ProjectsPage() {
                     ))}
                     <td className={`${td} text-right whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                        {atLeast(p.myRole, 'manager') && <IconButton icon={Pencil} label="Edit project" tone="edit" onClick={() => setEditing(p)} />}
-                        {p.myRole === 'owner' && <IconButton icon={Trash2} label="Delete project" tone="delete" onClick={() => onDelete(p)} />}
+                        {can(p, 'manage_project') && <IconButton icon={Pencil} label="Edit project" tone="edit" onClick={() => setEditing(p)} />}
+                        {can(p, 'delete_project') && <IconButton icon={Trash2} label="Delete project" tone="delete" onClick={() => onDelete(p)} />}
                       </div>
                     </td>
                   </tr>

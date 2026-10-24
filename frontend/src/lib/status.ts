@@ -1,5 +1,5 @@
 import type { BadgeTone } from '@/components/ui/Badge';
-import type { MemberRole, ProjectRole, ProjectStatus, Task } from './types';
+import type { ProjectStatus, Task } from './types';
 
 export type TaskStatus = 'not_started' | 'in_progress' | 'completed' | 'overdue';
 
@@ -24,17 +24,18 @@ export const PROJECT_STATUS: Record<ProjectStatus, { label: string; tone: BadgeT
   archived: { label: 'Archived', tone: 'neutral' },
 };
 
-export const PROJECT_ROLE: Record<ProjectRole, { label: string; tone: BadgeTone; description: string }> = {
+const BUILTIN_ROLE: Record<string, { label: string; tone: BadgeTone; description: string }> = {
   owner: { label: 'Owner', tone: 'purple', description: 'Full control, including deleting the project' },
   manager: { label: 'Manager', tone: 'info', description: 'Edit the plan, settings, members and baseline' },
-  member: { label: 'Member', tone: 'success', description: 'Edit tasks and resources' },
+  member: { label: 'Member', tone: 'success', description: 'Edit tasks and resources, log time' },
   viewer: { label: 'Viewer', tone: 'neutral', description: 'Read-only access' },
 };
 
-export const MEMBER_ROLES: MemberRole[] = ['manager', 'member', 'viewer'];
-
-const RANK: Record<ProjectRole, number> = { viewer: 1, member: 2, manager: 3, owner: 4 };
-export const atLeast = (role: ProjectRole | undefined, min: ProjectRole) => !!role && RANK[role] >= RANK[min];
+/** Label and badge tone for a role key (owner / built-in) or a custom role id. */
+export function roleBadge(role: string | null | undefined, name?: string): { label: string; tone: BadgeTone; description: string } {
+  if (role && BUILTIN_ROLE[role]) return { ...BUILTIN_ROLE[role], label: name || BUILTIN_ROLE[role].label };
+  return { label: name || 'Custom role', tone: 'warning', description: 'Custom role' };
+}
 
 export const KIND_LABEL: Record<'project' | 'program' | 'portfolio', string> = { project: 'Project', program: 'Program', portfolio: 'Portfolio' };
 
@@ -43,6 +44,10 @@ export const MODULE_LABELS: Record<string, string> = {
   table: 'Table',
   board: 'Board',
   calendar: 'Calendar',
+  team_planner: 'Team planner',
   resources: 'Resources',
+  time_costs: 'Time & costs',
+  budgets: 'Budgets',
+  reports: 'Reports',
   activity: 'Activity',
 };

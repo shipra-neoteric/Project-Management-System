@@ -1,17 +1,32 @@
 'use client';
 
-import { Palette, Save } from 'lucide-react';
+import { Coins, Palette, Save } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { PageLoader } from '@/components/ui/Feedback';
 import { Field, inputCls } from '@/components/ui/Field';
 import { Card, Page, PageHeader } from '@/components/ui/Layout';
+import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { AdminGate } from '@/features/AdminGate';
-import { useOrgSettings, useUpdateOrgSettings } from '@/features/queries';
+import { keys, useOrgSettings, useUpdateOrgSettings } from '@/features/queries';
 import { toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { fmtMoney } from '@/lib/money';
 import { DEFAULT_THEME_COLOR, useTheme } from '@/lib/theme';
+
+const CURRENCIES: Record<string, string> = {
+  INR: 'Indian rupee',
+  USD: 'US dollar',
+  EUR: 'Euro',
+  GBP: 'British pound',
+  AED: 'UAE dirham',
+  SGD: 'Singapore dollar',
+  AUD: 'Australian dollar',
+  CAD: 'Canadian dollar',
+  JPY: 'Japanese yen',
+};
 
 const PRESETS = ['#f97316', '#ef4444', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#1a365d'];
 
@@ -27,13 +42,16 @@ function OrgSettingsContent() {
   const settings = useOrgSettings();
   const save = useUpdateOrgSettings();
   const { setThemeColor } = useTheme();
+  const qc = useQueryClient();
   const [orgName, setOrgName] = useState('');
   const [color, setColor] = useState(DEFAULT_THEME_COLOR);
+  const [currency, setCurrency] = useState('INR');
 
   useEffect(() => {
     if (settings.data) {
       setOrgName(settings.data.orgName);
       setColor(settings.data.themeColor);
+      setCurrency(settings.data.currency ?? 'INR');
     }
   }, [settings.data]);
 
@@ -43,8 +61,10 @@ function OrgSettingsContent() {
 
   const onSave = async () => {
     try {
-      const data = await save.mutateAsync({ orgName: orgName.trim(), themeColor: color });
+      const data = await save.mutateAsync({ orgName: orgName.trim(), themeColor: color, currency });
       setThemeColor(data.themeColor);
+      // Amounts everywhere read the currency from work settings.
+      void qc.invalidateQueries({ queryKey: keys.workSettings });
       void toastSuccess('Organisation settings saved');
     } catch (err) {
       void toastError(errorMessage(err));
@@ -87,6 +107,20 @@ function OrgSettingsContent() {
                 />
               ))}
             </div>
+          </div>
+        </Card>
+        <Card title="Currency" icon={Coins}>
+          <div className="p-5 space-y-3">
+            <Field label="Currency for rates, costs and budgets" hint="Changing it relabels amounts; it does not convert them.">
+              <ThemedSelect
+                options={[...new Set([...Object.keys(CURRENCIES), currency])].map((code) => ({ value: code, label: code, description: CURRENCIES[code] ?? 'Custom' }))}
+                value={currency}
+                onChange={setCurrency}
+              />
+            </Field>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Example: <span className="font-medium text-gray-800 dark:text-gray-100 tabular-nums">{fmtMoney(125000.5, currency)}</span>
+            </p>
           </div>
         </Card>
         <Card title="Preview">

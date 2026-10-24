@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowDown, ArrowUp, BarChart3, CheckCircle2, Diamond, FolderKanban, ListTodo, PieChart, Plus, Settings2, Star, TrendingUp, UserCheck, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, BarChart3, CheckCircle2, Diamond, FolderKanban, ListTodo, PieChart, Plus, Settings2, Star, Timer, TrendingUp, UserCheck, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { BarList, StackedShare } from '@/components/charts/Charts';
@@ -11,12 +11,13 @@ import { Alert, EmptyState, PageLoader, ProgressBar } from '@/components/ui/Feed
 import { Card, KpiCard, KpiGrid, Page, PageHeader, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
 import { PriorityBadge, StatusBadge } from '@/components/ui/TaskBits';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
-import { useDashboard, useProjects, useUsers, useWorkSettings } from '@/features/queries';
+import { useDashboard, useProjects, useTimeEntries, useUsers, useWorkSettings } from '@/features/queries';
 import { toastError } from '@/lib/alerts';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/cn';
-import { diffDays, fmtDate, todayISO } from '@/lib/dates';
+import { addDays, diffDays, fmtDate, todayISO, weekday, WEEKDAY_NAMES } from '@/lib/dates';
+import { useTheme } from '@/lib/theme';
 import { PROJECT_STATUS } from '@/lib/status';
 import type { DashboardTask, ProjectStatus, User } from '@/lib/types';
 
@@ -30,6 +31,7 @@ const WIDGETS = {
   portfolio: { label: 'Portfolio', wide: true },
   milestones: { label: 'Upcoming milestones', wide: false },
   overdue: { label: 'Overdue tasks', wide: false },
+  myTime: { label: 'My time this week', wide: false },
 } as const;
 type WidgetId = keyof typeof WIDGETS;
 const DEFAULT_WIDGETS: WidgetId[] = ['kpis', 'myTasks', 'favorites', 'statusChart', 'workloadChart', 'portfolio', 'milestones', 'overdue'];
@@ -139,6 +141,8 @@ export default function DashboardPage() {
             </div>
           </Card>
         );
+      case 'myTime':
+        return <MyTimeWidget hoursPerDay={user?.workSchedule?.hoursPerDay ?? 8} workingDays={user?.workSchedule?.workingDays ?? [1, 2, 3, 4, 5]} />;
       case 'projectStatusChart': {
         const list = (projects.data ?? []).filter((p) => !p.isTemplate);
         return (
@@ -360,5 +364,59 @@ function TaskList({ tasks, loading, empty, emptyIcon = Diamond, render }: { task
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Hours logged per day this week (Mon–Sun) against the person's working day. */
+function MyTimeWidget({ hoursPerDay, workingDays }: { hoursPerDay: number; workingDays: number[] }) {
+  const { themeColor } = useTheme();
+  const today = todayISO();
+  const monday = addDays(today, -((weekday(today) + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const entries = useTimeEntries({ from: days[0], to: days[6] });
+  const perDay = days.map((d) => Math.round((entries.data ?? []).filter((e) => e.date === d).reduce((a, e) => a + e.hours, 0) * 100) / 100);
+  const total = Math.round(perDay.reduce((a, h) => a + h, 0) * 100) / 100;
+  const capacity = days.filter((d) => workingDays.includes(weekday(d))).length * hoursPerDay;
+  const scale = Math.max(hoursPerDay, ...perDay, 1);
+
+  return (
+    <Card
+      title="My time this week"
+      icon={Timer}
+      actions={
+        <Link href="/timesheet" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+          Open timesheet
+        </Link>
+      }
+    >
+      {entries.isLoading ? (
+        <PageLoader />
+      ) : (
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="text-2xl font-medium text-gray-900 dark:text-white tabular-nums">{total} h</span> of {capacity} h
+          </p>
+          <div className="relative h-28 flex items-end gap-2" role="img" aria-label={days.map((d, i) => `${WEEKDAY_NAMES[weekday(d)]} ${perDay[i]} hours`).join(', ')}>
+            {/* Dashed line at one working day */}
+            <div className="absolute inset-x-0 border-t border-dashed border-gray-300 dark:border-gray-600 pointer-events-none" style={{ bottom: `${(hoursPerDay / scale) * 100}%` }} />
+            {days.map((d, i) => (
+              <div key={d} className="flex-1 h-full flex flex-col justify-end items-center" title={`${fmtDate(d)}: ${perDay[i]} h`}>
+                {perDay[i] > 0 && (
+                  <span className={cn('text-[10px] tabular-nums mb-0.5', perDay[i] > hoursPerDay ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-gray-500 dark:text-gray-400')}>{perDay[i]}</span>
+                )}
+                <div className="w-full max-w-7 rounded-t" style={{ height: `${(perDay[i] / scale) * 100}%`, minHeight: perDay[i] > 0 ? 2 : 0, backgroundColor: themeColor }} />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            {days.map((d) => (
+              <span key={d} className={cn('flex-1 text-center text-[11px]', d === today ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500')}>
+                {WEEKDAY_NAMES[weekday(d)]}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

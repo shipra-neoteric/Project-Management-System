@@ -49,6 +49,11 @@ const taskSchema = new Schema(
     relations: { type: [relationSchema], default: [] },
     /** Admin-defined custom field values: { [customFieldId]: value } */
     customValues: { type: Schema.Types.Mixed, default: {} },
+    /** Estimated effort and effort left, in hours (summaries: totals of their children). */
+    work: { type: Number, default: null, min: 0 },
+    remainingWork: { type: Number, default: null, min: 0 },
+    /** Budget this task's time and costs are booked against. */
+    budget: { type: Schema.Types.ObjectId, ref: 'Budget', default: null },
     baselineStart: { type: String, default: null },
     baselineFinish: { type: String, default: null },
     // Computed by the scheduler
@@ -94,6 +99,9 @@ export interface PlanTask {
   manual: boolean;
   relations: { task: Types.ObjectId; type: RelationType }[];
   customValues: Record<string, unknown>;
+  work: number | null;
+  remainingWork: number | null;
+  budget: Types.ObjectId | null;
   baselineStart: string | null;
   baselineFinish: string | null;
   start: string;

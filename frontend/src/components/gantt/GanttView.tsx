@@ -32,7 +32,7 @@ import { confirmDanger, toastError } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { addDays } from '@/lib/dates';
-import { exportCsv, exportGanttPdf, exportPdf } from '@/lib/export';
+import { exportGanttPdf, exportPdf, exportTasksXlsx } from '@/lib/export';
 import { filterHierarchy } from '@/lib/query';
 import { useTheme } from '@/lib/theme';
 import type { Task } from '@/lib/types';
@@ -331,7 +331,7 @@ export function GanttView() {
           ) : (
             <IconButton icon={RefreshCw} label="Refresh" onClick={refetch} />
           )}
-          <ExportButton tone="green" icon={Download} label="Excel" disabled={!rows.length} onClick={() => exportCsv(project, rows, resourceNames)} />
+          <ExportButton tone="green" icon={Download} label="Excel" disabled={!rows.length} onClick={() => void exportTasksXlsx(project, rows, resourceNames)} />
           <ExportButton tone="red" icon={FileText} label="PDF" disabled={!rows.length} onClick={() => run(() => exportPdf(project, rows, resourceNames))} />
           <ExportButton
             tone="red"

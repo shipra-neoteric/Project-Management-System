@@ -14,7 +14,7 @@ import { useTaskMutations } from '@/features/queries';
 import { toastError } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { exportCsv } from '@/lib/export';
+import { exportTasksXlsx } from '@/lib/export';
 import { FIELD_MAP, groupRows, runQuery } from '@/lib/query';
 import { useTheme } from '@/lib/theme';
 
@@ -78,7 +78,7 @@ export default function TablePage() {
         </span>
         <button
           type="button"
-          onClick={() => exportCsv(plan.project, rows, resourceNames)}
+          onClick={() => void exportTasksXlsx(plan.project, rows, resourceNames)}
           disabled={!rows.length}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-800 rounded-md hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors disabled:opacity-40"
         >

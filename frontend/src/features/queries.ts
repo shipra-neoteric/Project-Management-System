@@ -28,6 +28,22 @@ import type {
   ViewConfig,
   ViewKind,
   WorkSettings,
+  Budget,
+  CostEntry,
+  GlobalRole,
+  Group,
+  HourlyRate,
+  PermissionInfo,
+  Planner,
+  ProjectPermission,
+  GlobalPermission,
+  Report,
+  ReportGroupBy,
+  ReportKind,
+  Role,
+  TimeEntry,
+  TimeOff,
+  WorkSchedule,
 } from '@/lib/types';
 
 export const keys = {
@@ -48,6 +64,17 @@ export const keys = {
   overview: (id: string) => ['overview', id] as const,
   baselines: (id: string) => ['baselines', id] as const,
   projectViews: ['project-views'] as const,
+  roles: ['roles'] as const,
+  globalRoles: ['global-roles'] as const,
+  groups: ['groups'] as const,
+  timeEntries: (filter: TimeEntryFilter) => ['time-entries', filter] as const,
+  costEntries: (id: string) => ['cost-entries', id] as const,
+  budgets: (id: string) => ['budgets', id] as const,
+  projectRates: (id: string) => ['project-rates', id] as const,
+  rates: (userId: string) => ['rates', userId] as const,
+  timeOff: (userId: string) => ['time-off', userId] as const,
+  planner: (from: string, to: string, project?: string) => ['planner', from, to, project ?? null] as const,
+  report: (id: string, params: ReportParams) => ['report', id, params] as const,
 };
 
 // ---- Organisation settings & users ---------------------------------------------------------
@@ -71,10 +98,33 @@ export function useUsers() {
 export function useUpdateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string; role?: User['role']; isActive?: boolean }) =>
+    mutationFn: ({ id, ...body }: { id: string; role?: User['role']; isActive?: boolean; name?: string; globalRoles?: string[]; workSchedule?: WorkSchedule }) =>
       api<{ user: User }>(`/users/${id}`, { method: 'PATCH', body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
   });
+}
+
+/** Placeholders, invitations and removing them. */
+export function useUserAdmin() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.users });
+    void qc.invalidateQueries({ queryKey: ['project'] });
+    void qc.invalidateQueries({ queryKey: ['plan'] });
+  };
+  return {
+    addPlaceholder: useMutation({ mutationFn: (name: string) => api<{ user: User }>('/users/placeholders', { method: 'POST', body: { name } }), onSuccess: refresh }),
+    replacePlaceholder: useMutation({
+      mutationFn: ({ id, userId }: { id: string; userId: string }) => api<{ user: User }>(`/users/${id}/replace`, { method: 'POST', body: { userId } }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/users/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+    invite: useMutation({
+      mutationFn: (body: { email: string; name?: string; projectId?: string; role?: string }) => api<{ user: User }>('/users/invite', { method: 'POST', body }),
+      onSuccess: refresh,
+    }),
+    resendInvite: useMutation({ mutationFn: (id: string) => api(`/users/${id}/resend-invite`, { method: 'POST' }) }),
+  };
 }
 
 export function useDashboard() {
@@ -178,17 +228,19 @@ export function useMembers(id: string) {
     void qc.invalidateQueries({ queryKey: keys.projects });
   };
   return {
+    /** Add a person (`userId`) or a group (`groupId`). */
     add: useMutation({
-      mutationFn: (body: { userId: string; role: MemberRole }) => api<{ project: Project }>(`/projects/${id}/members`, { method: 'POST', body }),
+      mutationFn: (body: { userId?: string; groupId?: string; role: MemberRole }) => api<{ project: Project }>(`/projects/${id}/members`, { method: 'POST', body }),
       onSuccess,
     }),
+    /** `memberId` is the member's user id or group id. */
     update: useMutation({
-      mutationFn: ({ userId, role }: { userId: string; role: MemberRole }) =>
-        api<{ project: Project }>(`/projects/${id}/members/${userId}`, { method: 'PATCH', body: { role } }),
+      mutationFn: ({ memberId, role }: { memberId: string; role: MemberRole }) =>
+        api<{ project: Project }>(`/projects/${id}/members/${memberId}`, { method: 'PATCH', body: { role } }),
       onSuccess,
     }),
     remove: useMutation({
-      mutationFn: (userId: string) => api<{ project: Project }>(`/projects/${id}/members/${userId}`, { method: 'DELETE' }),
+      mutationFn: (memberId: string) => api<{ project: Project }>(`/projects/${id}/members/${memberId}`, { method: 'DELETE' }),
       onSuccess,
     }),
   };
@@ -214,6 +266,9 @@ export interface TaskAttributes {
   accountable?: string | null;
   category?: string | null;
   percentComplete?: number;
+  budget?: string | null;
+  work?: number | null;
+  remainingWork?: number | null;
 }
 
 export interface TaskPatch extends TaskAttributes {
@@ -312,7 +367,7 @@ export function useWorkSettingsMutations() {
   const onSuccess = (data: WorkSettings) => {
     qc.setQueryData<WorkSettings>(keys.workSettings, (old) => ({ ...data, priorities: old?.priorities ?? data.priorities }));
   };
-  type Kind = 'types' | 'statuses' | 'phases' | 'custom-fields';
+  type Kind = 'types' | 'statuses' | 'phases' | 'custom-fields' | 'activities' | 'cost-types';
   return {
     create: useMutation({
       mutationFn: ({ kind, body }: { kind: Kind; body: Record<string, unknown> }) => api<WorkSettings>(`/work-settings/${kind}`, { method: 'POST', body }),
@@ -528,7 +583,256 @@ export function useProjectViews() {
 export function useWorkflowMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (workflow: Workflow) => api<WorkSettings>('/work-settings/workflow', { method: 'PUT', body: { manager: workflow.manager ?? null, member: workflow.member ?? null } }),
+    mutationFn: (workflow: Workflow) =>
+      api<WorkSettings>('/work-settings/workflow', { method: 'PUT', body: Object.fromEntries(Object.entries(workflow).map(([role, rules]) => [role, rules ?? null])) }),
     onSuccess: (data) => qc.setQueryData(keys.workSettings, data),
+  });
+}
+
+// ---- Phase 4: time, costs, budgets, rates, reports ---------------------------------------------
+
+export interface TimeEntryFilter {
+  project?: string;
+  task?: string;
+  user?: string;
+  from?: string;
+  to?: string;
+}
+
+const qs = (params: object) => {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
+  return entries.length ? `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()}` : '';
+};
+
+/** Time entries: your own across projects (no `project`), or a project's (everyone's if you may view time). */
+export function useTimeEntries(filter: TimeEntryFilter, enabled = true) {
+  return useQuery({
+    queryKey: keys.timeEntries(filter),
+    queryFn: async () => (await api<{ entries: TimeEntry[] }>(`/time-entries${qs(filter)}`)).entries,
+    enabled,
+  });
+}
+
+export interface TimeEntryInput {
+  project: string;
+  task?: string | null;
+  user?: string;
+  activity?: string | null;
+  date: string;
+  hours: number;
+  comment?: string;
+}
+
+export function useTimeMutations() {
+  const qc = useQueryClient();
+  const refresh = (projectId?: string) => {
+    void qc.invalidateQueries({ queryKey: ['time-entries'] });
+    void qc.invalidateQueries({ queryKey: ['report'] });
+    void qc.invalidateQueries({ queryKey: ['budgets'] });
+    void qc.invalidateQueries({ queryKey: projectId ? keys.plan(projectId) : ['plan'] });
+  };
+  return {
+    create: useMutation({ mutationFn: (body: TimeEntryInput) => api<{ entry: TimeEntry }>('/time-entries', { method: 'POST', body }), onSuccess: (_d, v) => refresh(v.project) }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: Partial<Omit<TimeEntryInput, 'project' | 'user'>> & { id: string }) => api<{ entry: TimeEntry }>(`/time-entries/${id}`, { method: 'PATCH', body }),
+      onSuccess: () => refresh(),
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/time-entries/${id}`, { method: 'DELETE' }), onSuccess: () => refresh() }),
+    /** Weekly timesheet: set your total hours for one project/task/activity/day (0 clears it). */
+    setCell: useMutation({
+      mutationFn: (body: { project: string; task: string | null; activity: string | null; date: string; hours: number }) =>
+        api('/time-entries/cell', { method: 'PUT', body }),
+      onSuccess: (_d, v) => refresh(v.project),
+    }),
+  };
+}
+
+export function useCostEntries(projectId: string, enabled = true) {
+  const qc = useQueryClient();
+  const base = `/projects/${projectId}/cost-entries`;
+  const query = useQuery({ queryKey: keys.costEntries(projectId), queryFn: async () => (await api<{ entries: CostEntry[] }>(base)).entries, enabled });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.costEntries(projectId) });
+    void qc.invalidateQueries({ queryKey: keys.budgets(projectId) });
+    void qc.invalidateQueries({ queryKey: ['report', projectId] });
+  };
+  type Input = { costType: string; units: number; date: string; task?: string | null; budget?: string | null; comment?: string };
+  return {
+    ...query,
+    create: useMutation({ mutationFn: (body: Input) => api<{ entry: CostEntry }>(base, { method: 'POST', body }), onSuccess: refresh }),
+    update: useMutation({ mutationFn: ({ id, ...body }: Partial<Input> & { id: string }) => api<{ entry: CostEntry }>(`${base}/${id}`, { method: 'PATCH', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`${base}/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export interface BudgetInput {
+  name: string;
+  description?: string;
+  labor: { label: string; user?: string | null; hours: number; rate: number }[];
+  material: { costType: string; units: number; unitRate?: number; comment?: string }[];
+}
+
+export function useBudgets(projectId: string, enabled = true) {
+  const qc = useQueryClient();
+  const base = `/projects/${projectId}/budgets`;
+  const query = useQuery({
+    queryKey: keys.budgets(projectId),
+    queryFn: () => api<{ budgets: Budget[]; canSeeMoney: boolean }>(base),
+    enabled,
+  });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.budgets(projectId) });
+    void qc.invalidateQueries({ queryKey: keys.plan(projectId) });
+  };
+  return {
+    ...query,
+    create: useMutation({ mutationFn: (body: BudgetInput) => api<{ budget: Budget }>(base, { method: 'POST', body }), onSuccess: refresh }),
+    update: useMutation({ mutationFn: ({ id, ...body }: Partial<BudgetInput> & { id: string }) => api<{ budget: Budget }>(`${base}/${id}`, { method: 'PATCH', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`${base}/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+/** Project-specific hourly rates (override a person's default rate in this project). */
+export function useProjectRates(projectId: string, enabled = true) {
+  const qc = useQueryClient();
+  const base = `/projects/${projectId}/rates`;
+  const query = useQuery({ queryKey: keys.projectRates(projectId), queryFn: async () => (await api<{ rates: HourlyRate[] }>(base)).rates, enabled });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.projectRates(projectId) });
+    void qc.invalidateQueries({ queryKey: ['time-entries'] });
+    void qc.invalidateQueries({ queryKey: ['report', projectId] });
+    void qc.invalidateQueries({ queryKey: keys.budgets(projectId) });
+  };
+  return {
+    ...query,
+    set: useMutation({ mutationFn: (body: { user: string; rate: number; validFrom: string }) => api(base, { method: 'POST', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`${base}/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+/** A person's default hourly rates (history by "valid from" date). */
+export function useDefaultRates(userId: string | null) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.rates(userId ?? ''),
+    queryFn: async () => (await api<{ rates: HourlyRate[] }>(`/rates?user=${userId}`)).rates,
+    enabled: !!userId,
+  });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['rates'] });
+    void qc.invalidateQueries({ queryKey: ['time-entries'] });
+    void qc.invalidateQueries({ queryKey: ['report'] });
+  };
+  return {
+    ...query,
+    set: useMutation({ mutationFn: (body: { user: string; rate: number; validFrom: string }) => api('/rates', { method: 'POST', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/rates/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export interface ReportParams {
+  kind: ReportKind;
+  groupBy: ReportGroupBy;
+  from?: string;
+  to?: string;
+  includeSubprojects?: boolean;
+  user?: string;
+}
+
+export function useReport(projectId: string, params: ReportParams, enabled = true) {
+  return useQuery({
+    queryKey: keys.report(projectId, params),
+    queryFn: () => api<Report>(`/projects/${projectId}/reports${qs(params)}`),
+    enabled,
+  });
+}
+
+// ---- Phase 5: roles, groups, time off, planner --------------------------------------------------
+
+export function useRoles() {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.roles,
+    queryFn: () => api<{ roles: Role[]; permissions: PermissionInfo<ProjectPermission>[] }>('/roles'),
+    staleTime: 60_000,
+  });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.roles });
+    void qc.invalidateQueries({ queryKey: ['project'] });
+    void qc.invalidateQueries({ queryKey: ['plan'] });
+    void qc.invalidateQueries({ queryKey: keys.projects });
+  };
+  type Input = { name: string; permissions: ProjectPermission[] };
+  return {
+    ...query,
+    create: useMutation({ mutationFn: (body: Input) => api<{ role: Role }>('/roles', { method: 'POST', body }), onSuccess: refresh }),
+    update: useMutation({ mutationFn: ({ id, ...body }: Partial<Input> & { id: string }) => api<{ role: Role }>(`/roles/${id}`, { method: 'PATCH', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/roles/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export function useGlobalRoles(enabled = true) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.globalRoles,
+    queryFn: () => api<{ roles: GlobalRole[]; permissions: PermissionInfo<GlobalPermission>[] }>('/global-roles'),
+    enabled,
+  });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.globalRoles });
+    void qc.invalidateQueries({ queryKey: keys.users });
+  };
+  type Input = { name: string; permissions: GlobalPermission[]; isDefault: boolean };
+  return {
+    ...query,
+    create: useMutation({ mutationFn: (body: Input) => api<{ role: GlobalRole }>('/global-roles', { method: 'POST', body }), onSuccess: refresh }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: Partial<Input> & { id: string }) => api<{ role: GlobalRole }>(`/global-roles/${id}`, { method: 'PATCH', body }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/global-roles/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export function useGroups(enabled = true) {
+  const qc = useQueryClient();
+  const query = useQuery({ queryKey: keys.groups, queryFn: async () => (await api<{ groups: Group[] }>('/groups')).groups, enabled });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.groups });
+    void qc.invalidateQueries({ queryKey: ['project'] });
+    void qc.invalidateQueries({ queryKey: ['plan'] });
+  };
+  type Input = { name: string; description?: string; members?: string[] };
+  return {
+    ...query,
+    create: useMutation({ mutationFn: (body: Input) => api<{ group: Group }>('/groups', { method: 'POST', body }), onSuccess: refresh }),
+    update: useMutation({ mutationFn: ({ id, ...body }: Partial<Input> & { id: string }) => api<{ group: Group }>(`/groups/${id}`, { method: 'PATCH', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/groups/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+export function useTimeOff(userId: string | null) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.timeOff(userId ?? ''),
+    queryFn: async () => (await api<{ timeOff: TimeOff[] }>(`/time-off?user=${userId}`)).timeOff,
+    enabled: !!userId,
+  });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['time-off'] });
+    void qc.invalidateQueries({ queryKey: ['planner'] });
+  };
+  return {
+    ...query,
+    add: useMutation({ mutationFn: (body: { start: string; end: string; note?: string; user?: string }) => api('/time-off', { method: 'POST', body }), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => api<void>(`/time-off/${id}`, { method: 'DELETE' }), onSuccess: refresh }),
+  };
+}
+
+/** Capacity vs allocated hours per person per day (optionally only one project's team). */
+export function usePlanner(from: string, to: string, project?: string) {
+  return useQuery({
+    queryKey: keys.planner(from, to, project),
+    queryFn: () => api<Planner>(`/planner${qs({ from, to, project })}`),
   });
 }

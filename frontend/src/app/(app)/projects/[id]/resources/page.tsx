@@ -18,7 +18,7 @@ import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { addDays, diffDays, weekday } from '@/lib/dates';
-import { atLeast } from '@/lib/status';
+import { can } from '@/lib/permissions';
 import type { Project, Resource, Task } from '@/lib/types';
 
 /** Work days, task count and over-allocated days per resource (from the plan). */
@@ -56,7 +56,7 @@ export default function ResourcesPage() {
   const { data: resources = [], isLoading, error } = useResources(id);
   const { remove } = useResourceMutations(id);
   const workload = useWorkload(plan.data?.project, plan.data?.tasks ?? []);
-  const canEdit = atLeast(plan.data?.project.myRole, 'member');
+  const canEdit = can(plan.data?.project, 'manage_resources');
   const [drawer, setDrawer] = useState<{ open: boolean; resource: Resource | null }>({ open: false, resource: null });
 
   const onDelete = async (r: Resource) => {

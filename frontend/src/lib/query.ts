@@ -44,7 +44,9 @@ export const PRIORITY_COLORS: Record<string, string> = { low: '#6b7280', normal:
 export const readableId = (t: Pick<Task, 'number'>, project: Pick<Project, 'key'>) => (t.number ? `${project.key}-${t.number}` : '');
 
 const person = (id: string | null, ctx: QueryContext) => (id ? ctx.people.get(id)?.name ?? 'Former member' : '');
-const peopleOptions = (ctx: QueryContext): FieldOption[] => [...ctx.people.values()].map((u) => ({ value: u._id, label: u.name }));
+/** Hours as "7.5h" (empty when not estimated). */
+const hoursText = (h: number | null | undefined) => (h == null ? '' : `${Math.round(h * 100) / 100}h`);
+const peopleOptions =(ctx: QueryContext): FieldOption[] => [...ctx.people.values()].map((u) => ({ value: u._id, label: u.name }));
 
 export const FIELDS: FieldDef[] = [
   { key: 'id', label: 'ID', kind: 'text', value: (t, c) => readableId(t, c.project), display: (t, c) => readableId(t, c.project), sortable: true, width: 90 },
@@ -108,6 +110,9 @@ export const FIELDS: FieldDef[] = [
   { key: 'finish', label: 'Finish', kind: 'date', value: (t) => t.finish, display: (t) => t.finish, sortable: true, width: 110 },
   { key: 'duration', label: 'Duration', kind: 'number', value: (t) => t.duration, display: (t) => `${t.duration}d`, sortable: true, width: 90 },
   { key: 'percentComplete', label: '% Done', kind: 'number', value: (t) => t.percentComplete, display: (t) => `${t.percentComplete}%`, sortable: true, width: 90 },
+  { key: 'work', label: 'Work', kind: 'number', value: (t) => t.work ?? null, display: (t) => hoursText(t.work), sortable: true, width: 90 },
+  { key: 'remainingWork', label: 'Remaining work', kind: 'number', value: (t) => t.remainingWork ?? null, display: (t) => hoursText(t.remainingWork), sortable: true, width: 110 },
+  { key: 'spentHours', label: 'Spent time', kind: 'number', value: (t) => t.spentHours ?? 0, display: (t) => (t.spentHours ? hoursText(t.spentHours) : ''), sortable: true, width: 100 },
   { key: 'critical', label: 'Critical', kind: 'bool', value: (t) => t.isCritical, display: (t) => (t.isCritical ? 'Yes' : ''), groupable: true, width: 80 },
   { key: 'overdue', label: 'Overdue', kind: 'bool', value: (t, c) => !!t.finish && t.finish < c.today && t.percentComplete < 100, display: (t, c) => (t.finish < c.today && t.percentComplete < 100 ? 'Yes' : ''), width: 80 },
   { key: 'milestone', label: 'Milestone', kind: 'bool', value: (t) => t.isMilestone, display: (t) => (t.isMilestone ? 'Yes' : ''), width: 90 },

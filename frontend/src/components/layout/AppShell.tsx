@@ -2,6 +2,10 @@
 
 import {
   Building2,
+  CalendarRange,
+  KeyRound,
+  Timer,
+  UsersRound,
   ChevronsLeft,
   ChevronsRight,
   FolderKanban,
@@ -30,6 +34,8 @@ import { api } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/alerts';
 import { SLOW_EVENT } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { hasGlobal } from '@/lib/permissions';
+import type { GlobalPermission } from '@/lib/types';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/lib/theme';
 
@@ -37,7 +43,8 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  adminOnly?: boolean;
+  /** Organisation permission needed to see the entry ('admin' = administrators only). */
+  perm?: GlobalPermission | 'admin';
 }
 
 const NAV: { section: string; items: NavItem[] }[] = [
@@ -46,14 +53,18 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/projects', label: 'Projects', icon: FolderKanban },
+      { href: '/timesheet', label: 'My timesheet', icon: Timer },
+      { href: '/planner', label: 'Resource planner', icon: CalendarRange },
     ],
   },
   {
     section: 'Admin',
     items: [
-      { href: '/users', label: 'Users', icon: Users, adminOnly: true },
-      { href: '/work-settings', label: 'Work settings', icon: ListChecks, adminOnly: true },
-      { href: '/settings', label: 'Organisation', icon: Settings, adminOnly: true },
+      { href: '/users', label: 'Users', icon: Users, perm: 'manage_users' },
+      { href: '/groups', label: 'Groups', icon: UsersRound, perm: 'manage_users' },
+      { href: '/roles', label: 'Roles & permissions', icon: KeyRound, perm: 'admin' },
+      { href: '/work-settings', label: 'Work settings', icon: ListChecks, perm: 'manage_work_settings' },
+      { href: '/settings', label: 'Organisation', icon: Settings, perm: 'admin' },
     ],
   },
 ];
@@ -132,8 +143,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function Sidebar({ collapsed, mobileOpen, orgName, onToggle, onClose }: { collapsed: boolean; mobileOpen: boolean; orgName: string; onToggle: () => void; onClose: () => void }) {
   const pathname = usePathname();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { themeColor } = useTheme();
+  const allowed = (item: NavItem) => !item.perm || (item.perm === 'admin' ? isAdmin : hasGlobal(user, item.perm));
 
   return (
     <aside
@@ -161,7 +173,7 @@ function Sidebar({ collapsed, mobileOpen, orgName, onToggle, onClose }: { collap
       <nav className="flex-1 overflow-y-auto custom-scrollbar px-3 py-4 space-y-5">
         <FavoritesNav collapsed={collapsed} />
         {NAV.map((group) => {
-          const items = group.items.filter((i) => !i.adminOnly || isAdmin);
+          const items = group.items.filter(allowed);
           if (!items.length) return null;
           return (
             <div key={group.section}>

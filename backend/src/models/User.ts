@@ -6,8 +6,19 @@ export type AppRole = (typeof APP_ROLES)[number];
 const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true, select: false },
+    /** Placeholder users have no email and cannot sign in. */
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    passwordHash: { type: String, select: false },
+    /** 'user' = real person; 'placeholder' = stand-in for someone not yet hired/named (e.g. "Electrician"). */
+    kind: { type: String, enum: ['user', 'placeholder'], default: 'user' },
+    /** Invited by email but has not set a password yet. */
+    invited: { type: Boolean, default: false },
+    inviteTokenHash: { type: String, default: null, select: false },
+    globalRoles: { type: [Schema.Types.ObjectId], ref: 'GlobalRole', default: [] },
+    workSchedule: {
+      hoursPerDay: { type: Number, default: 8, min: 0, max: 24 },
+      workingDays: { type: [Number], default: [1, 2, 3, 4, 5] },
+    },
     role: { type: String, enum: APP_ROLES, default: 'User' },
     isActive: { type: Boolean, default: true },
     emailVerified: { type: Boolean, default: false },
@@ -32,12 +43,18 @@ export function publicUser(user: UserDoc) {
   return {
     _id: user._id.toString(),
     name: user.name,
-    email: user.email,
+    email: user.email ?? '',
     role: user.role as AppRole,
     isActive: user.isActive,
     emailVerified: !!user.emailVerified,
     notifyByEmail: user.notifyByEmail !== false,
     favorites: (user.favorites ?? []).map(String),
     dashboardWidgets: user.dashboardWidgets ?? null,
+    kind: (user.kind ?? 'user') as 'user' | 'placeholder',
+    invited: !!user.invited,
+    globalRoles: (user.globalRoles ?? []).map(String),
+    workSchedule: { hoursPerDay: user.workSchedule?.hoursPerDay ?? 8, workingDays: user.workSchedule?.workingDays ?? [1, 2, 3, 4, 5] },
+    /** Effective organisation-wide permissions (filled in by requireAuth). */
+    globalPermissions: [...((user.$locals?.globalPerms as Set<string> | undefined) ?? [])],
   };
 }

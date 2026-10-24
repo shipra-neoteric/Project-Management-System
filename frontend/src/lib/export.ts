@@ -35,22 +35,61 @@ function rowsFor(project: Project, tasks: Task[], resourceNames: Map<string, str
   }));
 }
 
-/** Excel-compatible CSV (UTF-8 with BOM so Excel opens it correctly). */
-export function exportCsv(project: Project, tasks: Task[], resourceNames: Map<string, string>) {
-  const header = ['ID', 'WBS', 'Task Name', 'Duration', 'Start', 'Finish', 'Predecessors', 'Resources', '% Complete', 'Baseline Start', 'Baseline Finish', 'Critical'];
-  const esc = (v: unknown) => {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [header.join(',')];
-  for (const r of rowsFor(project, tasks, resourceNames)) {
-    lines.push(
-      [r.id, r.wbs, `${'  '.repeat(r.level)}${r.name}`, r.duration, r.start, r.finish, r.predecessors, r.resources, r.percent, r.baselineStart, r.baselineFinish, r.critical]
-        .map(esc)
-        .join(','),
-    );
-  }
-  download(new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), fileName(project, 'csv'));
+export type XlsxCell = string | number | boolean | null | undefined;
+
+export interface XlsxSheet {
+  name: string;
+  header: string[];
+  rows: XlsxCell[][];
+  /** Column widths in characters (defaults from the header). */
+  widths?: number[];
+}
+
+/** Writes a real .xlsx workbook (bold, frozen header row; numbers stay numbers). */
+export async function exportXlsx(file: string, sheets: XlsxSheet[]) {
+  const { default: writeXlsxFile } = await import('write-excel-file/browser');
+  const data = sheets.map((sheet) => ({
+    sheet: sheet.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31),
+    stickyRowsCount: 1,
+    columns: sheet.header.map((h, i) => ({ width: sheet.widths?.[i] ?? Math.min(48, Math.max(10, h.length + 4)) })),
+    data: [
+      sheet.header.map((h) => ({ value: h, fontWeight: 'bold' as const })),
+      ...sheet.rows.map((row) =>
+        row.map((v) => (v === null || v === undefined || v === '' ? null : typeof v === 'number' ? { value: v, type: Number } : typeof v === 'boolean' ? { value: v ? 'Yes' : 'No' } : { value: String(v) })),
+      ),
+    ],
+  }));
+  const blob = await writeXlsxFile(data as never).toBlob();
+  download(blob, file.endsWith('.xlsx') ? file : `${file}.xlsx`);
+}
+
+/** File name for any export: "<name> - <today>.<ext>". */
+export const exportFileName = (name: string, ext: string) => `${name.replace(/[^\w\- ]+/g, '').trim() || 'export'} - ${todayISO()}.${ext}`;
+
+/** The task list as an Excel workbook. */
+export function exportTasksXlsx(project: Project, tasks: Task[], resourceNames: Map<string, string>) {
+  const header = ['ID', 'WBS', 'Task Name', 'Duration (days)', 'Start', 'Finish', 'Predecessors', 'Resources', '% Complete', 'Work (h)', 'Remaining (h)', 'Spent (h)', 'Baseline Start', 'Baseline Finish', 'Critical'];
+  const rows = rowsFor(project, tasks, resourceNames).map((r, i) => {
+    const t = tasks[i];
+    return [
+      r.id,
+      r.wbs,
+      `${'   '.repeat(r.level)}${r.name}`,
+      t.duration,
+      r.start,
+      r.finish,
+      r.predecessors,
+      r.resources,
+      r.percent,
+      t.work ?? null,
+      t.remainingWork ?? null,
+      t.spentHours || null,
+      r.baselineStart,
+      r.baselineFinish,
+      r.critical,
+    ];
+  });
+  return exportXlsx(fileName(project, 'xlsx'), [{ name: 'Tasks', header, rows, widths: [10, 8, 44, 10, 12, 12, 16, 24, 10, 10, 12, 10, 14, 14, 9] }]);
 }
 
 /** PDF report — fixed corporate navy header (Nexora PDF rule). */

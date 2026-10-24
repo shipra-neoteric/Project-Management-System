@@ -1,21 +1,30 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { z } from 'zod';
-import { requireAdmin } from '../middleware/auth';
+import { requireGlobal } from '../middleware/auth';
 import { PRIORITIES, Status, TaskType } from '../models/Catalog';
 import { CUSTOM_FIELD_KINDS, CUSTOM_FIELD_SCOPES, CustomField, PhaseDefinition } from '../models/CustomField';
+import { CostEntry, CostType, TimeActivity, TimeEntry } from '../models/Finance';
+import { ensureFinanceDefaults } from '../services/costing';
 import { Project } from '../models/Project';
 import { Setting } from '../models/Setting';
 import { Task } from '../models/Task';
 import { getCatalog } from '../services/catalog';
+import { loadRoles, roleInfo } from '../services/permissions';
 import { assertObjectId, badRequest, conflict, notFound, parseBody } from '../utils/http';
 
 /** Task types, statuses, workflow, life-cycle phases and custom fields. Everyone reads; admins change. */
 export const workSettingsRouter = Router();
 
 async function payload() {
-  const { types, statuses, phases, customFields, workflow } = await getCatalog();
-  return { types, statuses, phases, customFields, workflow, priorities: PRIORITIES };
+  await ensureFinanceDefaults();
+  const [{ types, statuses, phases, customFields, workflow }, activities, costTypes, setting] = await Promise.all([
+    getCatalog(),
+    TimeActivity.find().sort({ position: 1, name: 1 }).lean(),
+    CostType.find().sort({ position: 1, name: 1 }).lean(),
+    Setting.findOne({ key: 'org' }).select('currency').lean(),
+  ]);
+  return { types, statuses, phases, customFields, workflow, activities, costTypes, currency: setting?.currency ?? 'INR', priorities: PRIORITIES };
 }
 
 workSettingsRouter.get('/', async (_req, res) => {
@@ -39,7 +48,10 @@ const schemas = {
     position: z.number().int().min(0).max(1000).optional(),
     isDefault: z.boolean().optional(),
     isClosed: z.boolean().optional(),
+    percentDone: z.number().int().min(0).max(100).nullable().optional(),
   }),
+  activities: z.object({ name, color: color.optional(), position: z.number().int().min(0).max(1000).optional(), isDefault: z.boolean().optional() }),
+  'cost-types': z.object({ name, unit: z.string().trim().min(1).max(20), unitRate: z.number().min(0).max(1e9), color: color.optional(), position: z.number().int().min(0).max(1000).optional() }),
   phases: z.object({
     name,
     color,
@@ -58,14 +70,16 @@ const schemas = {
 };
 type Path = keyof typeof schemas;
 
-const models = { types: TaskType, statuses: Status, phases: PhaseDefinition, 'custom-fields': CustomField } as const;
-const labels: Record<Path, string> = { types: 'Type', statuses: 'Status', phases: 'Phase', 'custom-fields': 'Custom field' };
+const models = { types: TaskType, statuses: Status, phases: PhaseDefinition, 'custom-fields': CustomField, activities: TimeActivity, 'cost-types': CostType } as const;
+const labels: Record<Path, string> = { types: 'Type', statuses: 'Status', phases: 'Phase', 'custom-fields': 'Custom field', activities: 'Activity', 'cost-types': 'Cost type' };
 
 /** Usage check before deleting: returns how many records still reference the item. */
 async function usage(path: Path, id: string): Promise<number> {
   if (path === 'types') return Task.countDocuments({ type: id });
   if (path === 'statuses') return Task.countDocuments({ status: id });
   if (path === 'phases') return Project.countDocuments({ 'lifecycle.definition': id });
+  if (path === 'activities') return TimeEntry.countDocuments({ activity: id });
+  if (path === 'cost-types') return CostEntry.countDocuments({ costType: id });
   return 0;
 }
 
@@ -83,7 +97,7 @@ for (const path of Object.keys(schemas) as Path[]) {
     if (body.options) body.options = body.options.map((o) => (o._id && Types.ObjectId.isValid(o._id) ? o : { name: o.name }));
   };
 
-  workSettingsRouter.post(`/${path}`, requireAdmin, async (req, res) => {
+  workSettingsRouter.post(`/${path}`, requireGlobal('manage_work_settings'), async (req, res) => {
     const body = parseBody(schema, req.body) as Record<string, unknown> & { name: string; isDefault?: boolean; kind?: string; options?: { name: string }[] };
     await assertUniqueName(body.name);
     if ((body.kind === 'select' || body.kind === 'multiselect') && !body.options?.length) throw badRequest('Add at least one option');
@@ -93,7 +107,7 @@ for (const path of Object.keys(schemas) as Path[]) {
     res.status(201).json(await payload());
   });
 
-  workSettingsRouter.patch(`/${path}/:itemId`, requireAdmin, async (req, res) => {
+  workSettingsRouter.patch(`/${path}/:itemId`, requireGlobal('manage_work_settings'), async (req, res) => {
     const body = parseBody(schema.partial(), req.body) as Record<string, unknown> & { name?: string; isDefault?: boolean; kind?: string; scope?: string; options?: { _id?: string; name: string }[] };
     const id = assertObjectId(req.params.itemId, label);
     const existing = await Model.findById(id).lean<Record<string, unknown>>();
@@ -109,7 +123,7 @@ for (const path of Object.keys(schemas) as Path[]) {
     res.json(await payload());
   });
 
-  workSettingsRouter.delete(`/${path}/:itemId`, requireAdmin, async (req, res) => {
+  workSettingsRouter.delete(`/${path}/:itemId`, requireGlobal('manage_work_settings'), async (req, res) => {
     const id = assertObjectId(req.params.itemId, label);
     const doc = await Model.findById(id).lean<Record<string, unknown>>();
     if (!doc) throw notFound(label);
@@ -128,16 +142,18 @@ for (const path of Object.keys(schemas) as Path[]) {
 }
 
 const roleRules = z.record(z.string(), z.array(z.string()).max(100)).nullable().optional();
-const workflowSchema = z.object({ manager: roleRules, member: roleRules });
+const workflowSchema = z.record(z.string().max(40), roleRules);
 
-/** PUT /work-settings/workflow — `{ manager: {from: [to…]} | null, member: … }`; null removes restrictions for that role. */
-workSettingsRouter.put('/workflow', requireAdmin, async (req, res) => {
+/** PUT /work-settings/workflow — `{ <role key or id>: {from: [to…]} | null, … }`; null removes restrictions for that role. */
+workSettingsRouter.put('/workflow', requireGlobal('manage_work_settings'), async (req, res) => {
   const body = parseBody(workflowSchema, req.body);
   const { statuses } = await getCatalog();
+  await loadRoles();
   const ids = new Set(statuses.map((s) => String(s._id)));
   const workflow: Record<string, Record<string, string[]>> = {};
   for (const [role, rules] of Object.entries(body)) {
     if (!rules) continue;
+    if (!roleInfo(role) || role === 'viewer') throw badRequest('Workflow refers to an unknown role');
     workflow[role] = {};
     for (const [from, tos] of Object.entries(rules)) {
       if (!ids.has(from) || tos.some((t) => !ids.has(t))) throw badRequest('Workflow refers to an unknown status');

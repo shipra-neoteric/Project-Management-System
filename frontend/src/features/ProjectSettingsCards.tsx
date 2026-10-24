@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Copy, LayoutGrid, ListPlus, Milestone, Plus, Save, Trash2, X } from 'lucide-react';
+import { BarChart3, Copy, Gauge, Coins, LayoutGrid, ListPlus, Milestone, Plus, Save, Trash2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -10,13 +10,15 @@ import { Alert } from '@/components/ui/Feedback';
 import { Field, inputCls } from '@/components/ui/Field';
 import { Card } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
-import { useBaselines, useCopyProject, useUpdateProject, useWorkSettings, type CopyOptions } from '@/features/queries';
+import { useBaselines, useCopyProject, useProjectRates, useUpdateProject, useWorkSettings, type CopyOptions } from '@/features/queries';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fmtDate, fmtDateTime, todayISO } from '@/lib/dates';
+import { useMoney } from '@/lib/money';
+import { can } from '@/lib/permissions';
 import { MODULE_LABELS } from '@/lib/status';
-import type { GateStatus, LifecyclePhase, Project, ProjectModule, UserRef } from '@/lib/types';
+import type { GateStatus, HourlyRate, LifecyclePhase, ProgressMode, Project, ProjectModule, UserRef } from '@/lib/types';
 
 async function run(fn: () => Promise<unknown>, success: string) {
   try {
@@ -265,6 +267,115 @@ export function CopyCard({ project, canManage }: { project: Project; canManage: 
           {project.isTemplate ? 'Create project from template' : 'Copy project'}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+const PROGRESS_MODES: { value: ProgressMode; title: string; text: string }[] = [
+  { value: 'manual', title: 'Manual', text: 'People type in % complete on each task' },
+  { value: 'work', title: 'Work-based', text: '% complete = (work − remaining work) ÷ work' },
+  { value: 'status', title: 'Status-based', text: 'Each status sets a % complete (Work settings → Statuses)' },
+];
+
+/** How task % complete is calculated in this project. */
+export function ProgressModeCard({ project, canManage }: { project: Project; canManage: boolean }) {
+  const update = useUpdateProject(project._id);
+  const mode = project.progressMode ?? 'manual';
+  const choose = (value: ProgressMode) => {
+    if (value === mode) return;
+    // progressMode is accepted by the API but not part of the shared mutation type.
+    void run(() => update.mutateAsync({ progressMode: value } as Parameters<typeof update.mutateAsync>[0]), 'Progress calculation updated');
+  };
+  return (
+    <Card title="Progress calculation" icon={Gauge}>
+      <div className="p-5 space-y-2">
+        {PROGRESS_MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            disabled={!canManage || update.isPending}
+            onClick={() => choose(m.value)}
+            aria-pressed={mode === m.value}
+            className={cn(
+              'w-full text-left px-3 py-2 rounded-md border transition-colors disabled:cursor-not-allowed',
+              mode === m.value ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50',
+            )}
+          >
+            <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.title}</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">{m.text}</span>
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Hourly rates that override people's default rates in this project. */
+export function ProjectRatesCard({ project, people }: { project: Project; people: UserRef[] }) {
+  const canView = can(project, 'view_costs');
+  const canEdit = can(project, 'manage_rates');
+  const rates = useProjectRates(project._id, canView);
+  const { money } = useMoney();
+  const [userId, setUserId] = useState('');
+  const [rate, setRate] = useState('');
+  const [validFrom, setValidFrom] = useState(todayISO());
+  if (!canView) return null;
+
+  const add = () => {
+    const value = Number(rate);
+    if (!userId || Number.isNaN(value) || value < 0) return void toastError('Choose a person and enter a rate');
+    void run(
+      () => rates.set.mutateAsync({ user: userId, rate: value, validFrom }).then(() => setRate('')),
+      'Rate saved — time entries were re-priced',
+    );
+  };
+  const list = rates.data ?? [];
+  const nameOf = (u: HourlyRate['user']) => (typeof u === 'object' ? u.name : people.find((p) => p._id === u)?.name ?? 'Former member');
+
+  return (
+    <Card title="Project hourly rates" icon={Coins}>
+      <div className="p-5 space-y-4">
+        <p className="text-sm text-gray-600 dark:text-gray-400">Override a person&apos;s default hourly rate for work in this project. Labour costs use the rate valid on the day the time was logged.</p>
+        {canEdit && (
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_150px_auto] gap-2 items-end">
+            <Field label="Person">
+              <ThemedSelect options={people.map((p) => ({ value: p._id, label: p.name }))} value={userId} onChange={setUserId} placeholder="Choose…" searchable />
+            </Field>
+            <Field label="Rate / hour" htmlFor="pr-rate">
+              <input id="pr-rate" type="number" min={0} step={0.01} className={inputCls} value={rate} onChange={(e) => setRate(e.target.value)} />
+            </Field>
+            <Field label="Valid from" htmlFor="pr-from">
+              <input id="pr-from" type="date" className={inputCls} value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
+            </Field>
+            <Button icon={Plus} loading={rates.set.isPending} disabled={!userId || rate === ''} onClick={add}>
+              Add
+            </Button>
+          </div>
+        )}
+        {list.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500">No project rates — everyone&apos;s default rate applies.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg">
+            {list.map((r) => (
+              <li key={r._id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <span className="flex-1 min-w-0 truncate font-medium text-gray-900 dark:text-white">{nameOf(r.user)}</span>
+                <span className="text-gray-500 dark:text-gray-400 tabular-nums">from {fmtDate(r.validFrom)}</span>
+                <span className="w-28 text-right font-medium text-gray-900 dark:text-white tabular-nums">{money(r.rate)}/h</span>
+                {canEdit && (
+                  <IconButton
+                    icon={Trash2}
+                    label="Delete rate"
+                    tone="delete"
+                    onClick={async () => {
+                      if (await confirmDanger('Delete this rate?', 'Time entries will be re-priced with the remaining rates.')) void run(() => rates.remove.mutateAsync(r._id), 'Rate deleted');
+                    }}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </Card>
   );
 }

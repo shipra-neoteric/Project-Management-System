@@ -5,8 +5,8 @@ import { OPEN_TASK_EVENT } from '@/components/layout/GlobalSearch';
 import { usePlan, useResources, useWorkSettings } from '@/features/queries';
 import { todayISO } from '@/lib/dates';
 import { syncCustomFields, type QueryContext } from '@/lib/query';
-import { atLeast } from '@/lib/status';
-import type { Plan, Resource, Task, UserRef, WorkSettings } from '@/lib/types';
+import { can as canIn, projectPeople } from '@/lib/permissions';
+import type { Plan, ProjectPermission, Resource, Task, UserRef, WorkSettings } from '@/lib/types';
 
 interface ProjectWorkspace {
   projectId: string;
@@ -16,8 +16,12 @@ interface ProjectWorkspace {
   resources: Resource[];
   workSettings: WorkSettings | undefined;
   ctx: QueryContext | null;
+  /** edit_tasks */
   canEdit: boolean;
+  /** manage_project */
   canManage: boolean;
+  /** Any project permission for the signed-in user. */
+  can: (perm: ProjectPermission) => boolean;
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
@@ -64,9 +68,7 @@ export function ProjectWorkspaceProvider({ projectId, children }: { projectId: s
   const ctx = useMemo<QueryContext | null>(() => {
     if (!project || !workSettings.data) return null;
     syncCustomFields(workSettings.data.customFields ?? []);
-    const people = new Map<string, UserRef>();
-    if (project.owner) people.set(project.owner._id, project.owner);
-    for (const m of project.members) if (m.user) people.set(m.user._id, m.user);
+    const people = projectPeople(project) as Map<string, UserRef>;
     return {
       project,
       today: todayISO(),
@@ -86,8 +88,9 @@ export function ProjectWorkspaceProvider({ projectId, children }: { projectId: s
     resources,
     workSettings: workSettings.data,
     ctx,
-    canEdit: atLeast(project?.myRole, 'member'),
-    canManage: atLeast(project?.myRole, 'manager'),
+    canEdit: canIn(project, 'edit_tasks'),
+    canManage: canIn(project, 'manage_project'),
+    can: (perm) => canIn(project, perm),
     isLoading: plan.isLoading || workSettings.isLoading,
     error: plan.error ?? workSettings.error,
     refetch: () => void plan.refetch(),

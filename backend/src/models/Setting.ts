@@ -7,6 +7,8 @@ const settingSchema = new Schema(
     key: { type: String, required: true, unique: true },
     orgName: { type: String, default: DEFAULT_SETTINGS.orgName, trim: true, maxlength: 80 },
     themeColor: { type: String, default: DEFAULT_SETTINGS.themeColor },
+    /** ISO currency code used for rates, costs and budgets. */
+    currency: { type: String, default: 'INR', uppercase: true, maxlength: 3 },
     /**
      * Allowed status transitions per project role:
      * `{ manager: { "<fromStatusId>": ["<toStatusId>", …] }, member: {…} }`.

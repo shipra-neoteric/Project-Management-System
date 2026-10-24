@@ -28,7 +28,8 @@ export function ensureDefaults(): Promise<void> {
 }
 
 /** role → fromStatusId → allowed target status ids. A role without rules is unrestricted. */
-export type Workflow = Partial<Record<'manager' | 'member', Record<string, string[]>>>;
+/** role key or custom role id → from status → allowed target statuses. */
+export type Workflow = Record<string, Record<string, string[]>>;
 
 export async function getCatalog() {
   await ensureDefaults();
@@ -149,6 +150,11 @@ export async function generateProjectKey(name: string, excludeId?: unknown): Pro
 
 /** Upgrades data created by earlier versions (types, statuses, project keys, task numbers). Safe to run repeatedly. */
 export async function backfill(): Promise<void> {
+  // Statuses created before progress modes get a sensible % done.
+  for (const s of await Status.find({ percentDone: null })) {
+    s.percentDone = s.isClosed ? 100 : s.isDefault ? 0 : 50;
+    await s.save();
+  }
   const { defaultType, milestoneType, defaultStatus } = await getCatalog();
   await Task.updateMany({ type: null, isMilestone: true }, { $set: { type: milestoneType._id } });
   await Task.updateMany({ type: null }, { $set: { type: defaultType._id } });

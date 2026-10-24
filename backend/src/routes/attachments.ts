@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose, { Types } from 'mongoose';
 import multer from 'multer';
-import { loadProject, ROLE_RANK } from '../middleware/projectAccess';
+import { hasPerm, loadProject } from '../middleware/projectAccess';
 import { Attachment } from '../models/Attachment';
 import { Task, type PlanTask } from '../models/Task';
 import { recordAttachment } from '../services/activity';
@@ -83,7 +83,7 @@ attachmentsRouter.get('/:attachmentId', loadProject('viewer'), async (req, res) 
 attachmentsRouter.delete('/:attachmentId', loadProject('member'), async (req, res) => {
   const attachment = await Attachment.findOne({ _id: assertObjectId(req.params.attachmentId, 'Attachment'), task: req.params.taskId, project: req.project!._id });
   if (!attachment) throw notFound('Attachment');
-  if (String(attachment.uploadedBy) !== req.user!._id.toString() && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) {
+  if (String(attachment.uploadedBy) !== req.user!._id.toString() && !hasPerm(req, 'manage_project')) {
     throw forbidden('Only the uploader or a manager can delete this file');
   }
   await deleteAttachmentFiles({ _id: attachment._id });

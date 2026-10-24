@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { z } from 'zod';
-import { loadProject, roleFor, ROLE_RANK } from '../middleware/projectAccess';
+import { loadProject } from '../middleware/projectAccess';
+import { can, projectPeopleIds } from '../services/permissions';
 import { PRIORITIES } from '../models/Catalog';
+import { Budget } from '../models/Finance';
 import { Project, type ProjectDoc } from '../models/Project';
 import { Resource } from '../models/Resource';
 import { RELATION_TYPES, type PlanTask } from '../models/Task';
@@ -12,7 +14,7 @@ import { LINK_TYPES } from '../scheduling/scheduler';
 import type { ProjectRole } from '../models/Project';
 import { recordTaskCreated, recordTaskDeleted, recordTaskUpdated } from '../services/activity';
 import { cleanCustomValues, getCatalog, isTransitionAllowed, type Catalog } from '../services/catalog';
-import { loadTasks, mutatePlan, serializeProject } from '../services/planService';
+import { loadTasks, mutatePlan, serializeProject, withSpentHours } from '../services/planService';
 import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
 
 /** Mounted at /api/projects/:id/tasks */
@@ -32,6 +34,10 @@ const attributeSchema = z.object({
   category: objectId.nullable().optional(),
   percentComplete: z.number().min(0).max(100).optional(),
   customValues: z.record(z.string(), z.unknown()).optional(),
+  budget: objectId.nullable().optional(),
+  /** Hours. */
+  work: z.number().min(0).max(100_000).nullable().optional(),
+  remainingWork: z.number().min(0).max(100_000).nullable().optional(),
 });
 
 const createSchema = attributeSchema.extend({
@@ -101,11 +107,13 @@ async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attr
   if (patch.type && !catalog.types.some((t) => String(t._id) === patch.type)) throw badRequest('Unknown task type');
   if (patch.status && !catalog.statuses.some((s) => String(s._id) === patch.status)) throw badRequest('Unknown status');
   if (patch.category && !project.categories.some((c) => String(c._id) === patch.category)) throw badRequest('Unknown category for this project');
+  if (patch.budget && !(await Budget.exists({ _id: patch.budget, project: project._id }))) throw badRequest('Unknown budget for this project');
+  const people = await projectPeopleIds(project);
   for (const field of ['assignee', 'accountable'] as const) {
     const userId = patch[field];
     if (!userId) continue;
     const user = await User.findById(userId);
-    if (!user || !user.isActive || !isProjectPerson(project, userId)) {
+    if (!user || !user.isActive || !people.has(userId)) {
       throw badRequest(`The ${field} must be a member of this project`);
     }
   }
@@ -115,8 +123,18 @@ async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attr
 
   return (task: PlanTask) => {
     if (patch.type !== undefined) task.type = oid(patch.type);
+    if (patch.budget !== undefined) task.budget = patch.budget ? oid(patch.budget) : null;
+    if (!task.isSummary) {
+      if (patch.work !== undefined) {
+        // A first estimate also sets "remaining" unless that is given too.
+        if (patch.remainingWork === undefined && (task.remainingWork == null || task.work == null)) task.remainingWork = patch.work;
+        task.work = patch.work;
+      }
+      if (patch.remainingWork !== undefined) task.remainingWork = patch.remainingWork;
+      if (task.work != null && task.remainingWork != null && task.remainingWork > task.work) task.remainingWork = task.work;
+    }
     if (patch.customValues !== undefined) {
-      task.customValues = cleanCustomValues(catalog, 'task', patch.customValues, task.customValues ?? {}, (id) => isProjectPerson(project, id));
+      task.customValues = cleanCustomValues(catalog, 'task', patch.customValues, task.customValues ?? {}, (id) => people.has(id));
     }
     if (patch.priority !== undefined) task.priority = patch.priority;
     if (patch.assignee !== undefined) {
@@ -140,8 +158,6 @@ async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attr
   };
 }
 
-const isProjectPerson = (project: ProjectDoc, userId: string) =>
-  String(project.owner) === userId || project.members.some((m) => String(m.user) === userId);
 
 function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<PlanTask> & Pick<PlanTask, 'name' | 'duration' | 'type' | 'status'>): PlanTask {
   return {
@@ -162,6 +178,9 @@ function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<Pl
     number: null,
     manual: false,
     relations: [],
+    work: null,
+    remainingWork: null,
+    budget: null,
     baselineStart: null,
     baselineFinish: null,
     start: '',
@@ -183,7 +202,7 @@ function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<Pl
 // ---- Routes -----------------------------------------------------------------------------------
 
 tasksRouter.get('/', loadProject('viewer'), async (req, res) => {
-  res.json({ project: await serializeProject(req.project!, req.user!), tasks: await loadTasks(req.project!._id) });
+  res.json({ project: await serializeProject(req.project!, req.user!), tasks: await withSpentHours(req.project!._id, await loadTasks(req.project!._id)) });
 });
 
 tasksRouter.post('/', loadProject('member'), async (req, res) => {
@@ -308,9 +327,10 @@ tasksRouter.post('/transfer', loadProject('member'), async (req, res) => {
 
   const target = sameProject ? source : await Project.findById(assertObjectId(body.targetProjectId, 'Project'));
   if (!target) throw notFound('Target project');
-  const targetRole = roleFor(target, req.user!);
-  if (!targetRole) throw notFound('Target project');
-  if (ROLE_RANK[targetRole] < ROLE_RANK.member) throw forbidden('You need the member role on the target project');
+  if (!can(target, req.user!, 'view_project')) throw notFound('Target project');
+  if (!can(target, req.user!, 'edit_tasks')) throw forbidden('You need permission to edit tasks in the target project');
+  if (target.status === 'archived') throw forbidden('The target project is archived');
+  const targetPeople = await projectPeopleIds(target);
 
   const sourceTasks = await loadTasks(source._id);
   for (const id of body.taskIds) findTask(sourceTasks, id);
@@ -319,7 +339,7 @@ tasksRouter.post('/transfer', loadProject('member'), async (req, res) => {
 
   const idMap = new Map(picked.map((t) => [t._id.toString(), new Types.ObjectId()]));
   const remap = (id: Types.ObjectId | null) => (id ? idMap.get(id.toString()) ?? null : null);
-  const keepPerson = (id: Types.ObjectId | null) => (id && (sameProject || isProjectPerson(target, id.toString())) ? id : null);
+  const keepPerson = (id: Types.ObjectId | null) => (id && (sameProject || targetPeople.has(id.toString())) ? id : null);
 
   const copies = picked.map((t, i) => {
     const isRoot = !t.parent || !selected.has(t.parent.toString());

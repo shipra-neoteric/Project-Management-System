@@ -1,4 +1,5 @@
 import type { UserDoc } from '../models/User';
+import type { ProjectPermission } from '../models/Access';
 import type { ProjectDoc, ProjectRole } from '../models/Project';
 
 declare global {
@@ -8,6 +9,7 @@ declare global {
       user?: UserDoc;
       project?: ProjectDoc;
       projectRole?: ProjectRole;
+      permissions?: Set<ProjectPermission>;
     }
   }
 }

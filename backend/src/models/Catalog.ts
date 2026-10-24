@@ -23,6 +23,8 @@ const statusSchema = new Schema(
     isDefault: { type: Boolean, default: false },
     /** Closed statuses count as done: the task is set to 100 % complete. */
     isClosed: { type: Boolean, default: false },
+    /** % complete implied by this status when a project uses status-based progress. */
+    percentDone: { type: Number, default: null, min: 0, max: 100 },
   },
   { timestamps: true },
 );
@@ -45,10 +47,10 @@ export const DEFAULT_TYPES = [
 ];
 
 export const DEFAULT_STATUSES = [
-  { name: 'New', color: '#6b7280', isDefault: true },
-  { name: 'In progress', color: '#3b82f6' },
-  { name: 'On hold', color: '#f59e0b' },
-  { name: 'In review', color: '#8b5cf6' },
-  { name: 'Closed', color: '#22c55e', isClosed: true },
-  { name: 'Rejected', color: '#ef4444', isClosed: true },
+  { name: 'New', color: '#6b7280', isDefault: true, percentDone: 0 },
+  { name: 'In progress', color: '#3b82f6', percentDone: 50 },
+  { name: 'On hold', color: '#f59e0b', percentDone: 50 },
+  { name: 'In review', color: '#8b5cf6', percentDone: 80 },
+  { name: 'Closed', color: '#22c55e', isClosed: true, percentDone: 100 },
+  { name: 'Rejected', color: '#ef4444', isClosed: true, percentDone: 100 },
 ];

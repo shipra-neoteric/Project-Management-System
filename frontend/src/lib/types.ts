@@ -1,6 +1,27 @@
 export type AppRole = 'Admin' | 'User';
-export type ProjectRole = 'owner' | 'manager' | 'member' | 'viewer';
-export type MemberRole = Exclude<ProjectRole, 'owner'>;
+/** 'owner', a built-in role key ('manager' | 'member' | 'viewer') or a custom role id. */
+export type ProjectRole = string;
+export type MemberRole = string;
+export type ProjectPermission =
+  | 'view_project'
+  | 'edit_tasks'
+  | 'comment'
+  | 'manage_resources'
+  | 'manage_public_views'
+  | 'manage_project'
+  | 'manage_members'
+  | 'add_subprojects'
+  | 'delete_project'
+  | 'view_time'
+  | 'log_time'
+  | 'edit_time'
+  | 'view_costs'
+  | 'log_costs'
+  | 'view_budgets'
+  | 'manage_budgets'
+  | 'manage_rates';
+export type GlobalPermission = 'create_projects' | 'view_all_projects' | 'manage_users' | 'manage_work_settings' | 'manage_rates';
+export type ProgressMode = 'manual' | 'work' | 'status';
 export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'archived';
 export type LinkType = 'FS' | 'SS' | 'FF' | 'SF';
 export type RelationType = 'relates' | 'blocks' | 'duplicates' | 'includes' | 'requires';
@@ -16,10 +37,20 @@ export interface User {
   notifyByEmail?: boolean;
   favorites?: string[];
   dashboardWidgets?: string[] | null;
+  kind?: 'user' | 'placeholder';
+  invited?: boolean;
+  globalRoles?: string[];
+  workSchedule?: WorkSchedule;
+  globalPermissions?: GlobalPermission[];
+}
+
+export interface WorkSchedule {
+  hoursPerDay: number;
+  workingDays: number[];
 }
 
 export type ProjectKind = 'project' | 'program' | 'portfolio';
-export type ProjectModule = 'gantt' | 'table' | 'board' | 'calendar' | 'resources' | 'activity';
+export type ProjectModule = 'gantt' | 'table' | 'board' | 'calendar' | 'team_planner' | 'resources' | 'time_costs' | 'budgets' | 'reports' | 'activity';
 export type GateStatus = 'pending' | 'passed' | 'failed';
 
 export interface LifecyclePhase {
@@ -43,6 +74,16 @@ export interface UserRef {
   _id: string;
   name: string;
   email: string;
+  kind?: 'user' | 'placeholder';
+  invited?: boolean;
+}
+
+/** A project member: a person or a group, with a built-in or custom role. */
+export interface ProjectMember {
+  _id?: string;
+  user: UserRef | null;
+  group: { _id: string; name: string; members: UserRef[] } | null;
+  role: MemberRole;
 }
 
 export interface ProjectStats {
@@ -77,10 +118,13 @@ export interface Project {
   workingDays: number[];
   holidays: string[];
   owner: UserRef;
-  members: { user: UserRef; role: MemberRole }[];
+  members: ProjectMember[];
+  progressMode?: ProgressMode;
   baselineSavedAt: string | null;
   stats: ProjectStats;
-  myRole: ProjectRole;
+  myRole: ProjectRole | null;
+  myRoleName?: string;
+  myPermissions?: ProjectPermission[];
   createdAt: string;
   updatedAt: string;
 }
@@ -116,6 +160,12 @@ export interface Task {
   customValues: Record<string, unknown>;
   baselineStart: string | null;
   baselineFinish: string | null;
+  /** Estimated work and remaining work in hours. */
+  work?: number | null;
+  remainingWork?: number | null;
+  /** Hours logged (rolled up for summary tasks). */
+  spentHours?: number;
+  budget?: string | null;
   start: string;
   finish: string;
   isSummary: boolean;
@@ -144,6 +194,7 @@ export interface Resource {
 export interface OrgSettings {
   orgName: string;
   themeColor: string;
+  currency?: string;
 }
 
 export interface DashboardTask {
@@ -183,6 +234,7 @@ export interface Status {
   position: number;
   isDefault: boolean;
   isClosed: boolean;
+  percentDone?: number | null;
 }
 
 export type CustomFieldKind = 'text' | 'longtext' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean' | 'user';
@@ -206,7 +258,8 @@ export interface PhaseDefinition {
   position: number;
 }
 
-export type Workflow = Partial<Record<'manager' | 'member', Record<string, string[]>>>;
+/** Role key or custom role id → from status → allowed target statuses. */
+export type Workflow = Record<string, Record<string, string[]> | undefined>;
 
 export interface WorkSettings {
   types: TaskType[];
@@ -215,6 +268,9 @@ export interface WorkSettings {
   phases: PhaseDefinition[];
   customFields: CustomField[];
   workflow: Workflow;
+  activities: TimeActivity[];
+  costTypes: CostType[];
+  currency: string;
 }
 
 export interface JournalEntry {
@@ -305,4 +361,147 @@ export interface SavedView {
 export interface SearchResults {
   projects: { _id: string; name: string; key: string; status: ProjectStatus }[];
   tasks: { _id: string; project: string; projectName: string; projectKey: string; name: string; number: number | null; start: string; finish: string; percentComplete: number; isMilestone: boolean }[];
+}
+
+// ---- Phase 4: time, costs, budgets ----------------------------------------------------------
+
+export interface TimeActivity {
+  _id: string;
+  name: string;
+  color: string;
+  position: number;
+  isDefault: boolean;
+}
+
+export interface CostType {
+  _id: string;
+  name: string;
+  unit: string;
+  unitRate: number;
+  color: string;
+  position: number;
+}
+
+export interface TimeEntry {
+  _id: string;
+  project: string;
+  projectName: string;
+  projectKey: string;
+  task: string | null;
+  taskName: string;
+  taskNumber: number | null;
+  user: { _id: string; name: string } | null;
+  activity: { _id: string; name: string; color: string } | null;
+  date: string;
+  hours: number;
+  comment: string;
+  rate: number | null;
+  cost: number | null;
+}
+
+export interface CostEntry {
+  _id: string;
+  project: string;
+  task: string | null;
+  budget: string | null;
+  costType: { _id: string; name: string; unit: string } | null;
+  user: { _id: string; name: string } | null;
+  date: string;
+  units: number;
+  unitRate: number;
+  cost: number;
+  comment: string;
+}
+
+export interface BudgetSummary {
+  plannedLabor: number;
+  plannedMaterial: number;
+  planned: number;
+  actualLabor: number;
+  actualMaterial: number;
+  actual: number;
+  hours: number;
+  plannedHours: number;
+  remaining: number;
+  percentUsed: number;
+}
+
+export interface Budget {
+  _id: string;
+  project: string;
+  name: string;
+  description: string;
+  labor: { _id?: string; label: string; user: { _id: string; name: string } | string | null; hours: number; rate: number }[];
+  material: { _id?: string; costType: { _id: string; name: string; unit: string } | string; units: number; unitRate: number; comment: string }[];
+  summary?: BudgetSummary;
+}
+
+export interface HourlyRate {
+  _id: string;
+  user: { _id: string; name: string } | string;
+  project: string | null;
+  rate: number;
+  validFrom: string;
+}
+
+export type ReportKind = 'time' | 'cost';
+export type ReportGroupBy = 'user' | 'activity' | 'task' | 'month' | 'week' | 'costType' | 'project';
+
+export interface Report {
+  kind: ReportKind;
+  groupBy: ReportGroupBy;
+  rows: { key: string; label: string; hours: number; units: number; cost: number | null; count: number }[];
+  totals: { hours: number; cost: number | null; entries: number };
+  projects: number;
+  generatedAt: string;
+}
+
+// ---- Phase 5: roles, groups, planning -------------------------------------------------------
+
+export interface Role {
+  _id: string;
+  name: string;
+  /** 'manager' | 'member' | 'viewer' for built-in roles; null for custom roles. */
+  key: string | null;
+  permissions: ProjectPermission[];
+  position: number;
+}
+
+export interface PermissionInfo<K extends string = string> {
+  key: K;
+  label: string;
+  group?: string;
+}
+
+export interface GlobalRole {
+  _id: string;
+  name: string;
+  permissions: GlobalPermission[];
+  isDefault: boolean;
+}
+
+export interface Group {
+  _id: string;
+  name: string;
+  description: string;
+  members: UserRef[];
+}
+
+export interface TimeOff {
+  _id: string;
+  user: string;
+  start: string;
+  end: string;
+  note: string;
+}
+
+export interface Planner {
+  from: string;
+  to: string;
+  days: string[];
+  users: { _id: string; name: string; kind: 'user' | 'placeholder'; hoursPerDay: number }[];
+  capacity: Record<string, number[]>;
+  allocation: Record<string, number[]>;
+  tasks: { _id: string; project: string; projectName: string; projectKey: string; name: string; number: number | null; assignee: string; start: string; finish: string; hoursPerDay: number }[];
+  timeOff: { user: string; start: string; end: string; note: string }[];
 }

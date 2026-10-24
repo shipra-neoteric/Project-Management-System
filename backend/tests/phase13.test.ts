@@ -9,7 +9,7 @@ let app: Express;
 let outbox: { to: string; subject: string; text: string }[];
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } });
   process.env.MONGODB_URI = mongo.getUri('pms-phase13');
   process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-1234';
   process.env.FRONTEND_URL = 'http://localhost:3000';

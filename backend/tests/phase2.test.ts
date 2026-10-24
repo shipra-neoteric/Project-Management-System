@@ -8,7 +8,7 @@ let mongo: MongoMemoryServer;
 let app: Express;
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } });
   process.env.MONGODB_URI = mongo.getUri('pms-phase2');
   process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-1234';
   await mongoose.connect(process.env.MONGODB_URI);

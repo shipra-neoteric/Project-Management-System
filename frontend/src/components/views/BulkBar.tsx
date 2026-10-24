@@ -7,7 +7,7 @@ import { useProjects, useTaskMutations, type TaskAttributes } from '@/features/q
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { FIELD_MAP } from '@/lib/query';
-import { atLeast } from '@/lib/status';
+import { can } from '@/lib/permissions';
 import { useTheme } from '@/lib/theme';
 import type { Priority } from '@/lib/types';
 
@@ -38,7 +38,7 @@ export function BulkBar({ selected, onClear }: { selected: string[]; onClear: ()
   };
 
   const transferTo = async (mode: 'copy' | 'move') => {
-    const targets = (projects.data ?? []).filter((p) => atLeast(p.myRole, 'member') && (mode === 'copy' || p._id !== projectId));
+    const targets = (projects.data ?? []).filter((p) => can(p, 'edit_tasks') && (mode === 'copy' || p._id !== projectId));
     if (!targets.length) return void toastError('There is no other project you can edit');
     const Swal = (await import('sweetalert2')).default;
     const result = await Swal.fire({

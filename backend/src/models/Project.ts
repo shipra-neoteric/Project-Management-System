@@ -3,15 +3,19 @@ import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mong
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed', 'archived'] as const;
 export const MEMBER_ROLES = ['manager', 'member', 'viewer'] as const;
 export const PROJECT_KINDS = ['project', 'program', 'portfolio'] as const;
-export const PROJECT_MODULES = ['gantt', 'table', 'board', 'calendar', 'resources', 'activity'] as const;
+export const PROJECT_MODULES = ['gantt', 'table', 'board', 'calendar', 'team_planner', 'resources', 'time_costs', 'budgets', 'reports', 'activity'] as const;
 export type ProjectModule = (typeof PROJECT_MODULES)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
-export type ProjectRole = 'owner' | MemberRole;
+/** 'owner', a built-in role key ('manager' | 'member' | 'viewer') or a custom role id. */
+export type ProjectRole = string;
+export const PROGRESS_MODES = ['manual', 'work', 'status'] as const;
 
+/** A member is either a user or a group; `role` is a built-in role key or a custom role id. */
 const memberSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    role: { type: String, enum: MEMBER_ROLES, required: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    group: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
+    role: { type: String, required: true },
   },
   { _id: false },
 );
@@ -26,6 +30,8 @@ const projectSchema = new Schema(
     description: { type: String, default: '', maxlength: 2000 },
     /** project = plan with tasks; program / portfolio = containers that roll up their sub-projects. */
     kind: { type: String, enum: PROJECT_KINDS, default: 'project' },
+    /** How task % complete is calculated: typed in, from work/remaining work, or from the status. */
+    progressMode: { type: String, enum: PROGRESS_MODES, default: 'manual' },
     parent: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     isTemplate: { type: Boolean, default: false },
     /** Disabled modules are hidden from the project's tabs. */

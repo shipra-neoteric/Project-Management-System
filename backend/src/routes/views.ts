@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { loadProject, ROLE_RANK } from '../middleware/projectAccess';
+import { hasPerm, loadProject } from '../middleware/projectAccess';
 import { View, VIEW_KINDS } from '../models/View';
 import { assertObjectId, forbidden, notFound, parseBody } from '../utils/http';
 
@@ -37,7 +37,7 @@ viewsRouter.get('/', loadProject('viewer'), async (req, res) => {
 
 viewsRouter.post('/', loadProject('viewer'), async (req, res) => {
   const body = parseBody(createSchema, req.body);
-  if (body.isPublic && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) throw forbidden('Only managers can save views for the whole project');
+  if (body.isPublic && !hasPerm(req, 'manage_public_views')) throw forbidden('Only managers can save views for the whole project');
   const view = await View.create({ ...body, project: req.project!._id, owner: req.user!._id });
   res.status(201).json({ view });
 });
@@ -46,14 +46,14 @@ async function loadOwnView(req: Parameters<Parameters<typeof viewsRouter.patch>[
   const view = await View.findOne({ _id: assertObjectId(req.params.viewId, 'View'), project: req.project!._id });
   if (!view || (!view.isPublic && String(view.owner) !== req.user!._id.toString())) throw notFound('View');
   const isOwner = String(view.owner) === req.user!._id.toString();
-  if (!isOwner && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) throw forbidden('Only the creator or a manager can change this view');
+  if (!isOwner && !hasPerm(req, 'manage_public_views')) throw forbidden('Only the creator or a manager can change this view');
   return view;
 }
 
 viewsRouter.patch('/:viewId', loadProject('viewer'), async (req, res) => {
   const body = parseBody(createSchema.partial(), req.body);
   const view = await loadOwnView(req);
-  if (body.isPublic && !view.isPublic && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) {
+  if (body.isPublic && !view.isPublic && !hasPerm(req, 'manage_public_views')) {
     throw forbidden('Only managers can share views with the whole project');
   }
   view.set(body);

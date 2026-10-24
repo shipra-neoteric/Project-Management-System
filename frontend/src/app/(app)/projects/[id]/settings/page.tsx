@@ -1,26 +1,25 @@
 'use client';
 
-import { CalendarDays, Info, Pencil, Plus, ShieldAlert, Tags, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { CalendarDays, Info, Mail, Pencil, Plus, ShieldAlert, Tags, Trash2, UserPlus, Users, UsersRound, X } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Alert, PageLoader } from '@/components/ui/Feedback';
 import { Field, inputCls } from '@/components/ui/Field';
-import { Card, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
+import { Card, FilterTabs, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
-import { AttributesCard, BaselinesCard, CopyCard, LifecycleCard, ModulesCard } from '@/features/ProjectSettingsCards';
-import { useDeleteProject, useMembers, useProject, useUpdateProject, useUsers } from '@/features/queries';
+import { AttributesCard, BaselinesCard, CopyCard, LifecycleCard, ModulesCard, ProgressModeCard, ProjectRatesCard } from '@/features/ProjectSettingsCards';
+import { useDeleteProject, useGroups, useMembers, useProject, useRoles, useUpdateProject, useUserAdmin, useUsers } from '@/features/queries';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fmtDate, fmtDateTime, WEEKDAY_NAMES } from '@/lib/dates';
-import { atLeast, MEMBER_ROLES, PROJECT_ROLE, PROJECT_STATUS } from '@/lib/status';
+import { can, projectPeople } from '@/lib/permissions';
+import { PROJECT_STATUS, roleBadge } from '@/lib/status';
 import { useTheme } from '@/lib/theme';
 import type { MemberRole, Project } from '@/lib/types';
-
-const ROLE_OPTIONS = MEMBER_ROLES.map((r) => ({ value: r, label: PROJECT_ROLE[r].label, description: PROJECT_ROLE[r].description }));
 
 export default function ProjectSettingsPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +27,8 @@ export default function ProjectSettingsPage() {
   const [editOpen, setEditOpen] = useState(false);
 
   if (isLoading || !project) return <PageLoader />;
-  const canManage = atLeast(project.myRole, 'manager');
+  const canManage = can(project, 'manage_project');
+  const canManageMembers = can(project, 'manage_members');
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
@@ -60,13 +60,15 @@ export default function ProjectSettingsPage() {
 
       <CalendarCard project={project} canManage={canManage} />
       <CategoriesCard project={project} canManage={canManage} />
-      <MembersCard project={project} canManage={canManage} />
-      <AttributesCard project={project} canManage={canManage} people={[project.owner, ...project.members.filter((m) => m.user).map((m) => m.user)]} />
+      <MembersCard project={project} canManage={canManageMembers} />
+      <AttributesCard project={project} canManage={canManage} people={[...projectPeople(project).values()]} />
       <LifecycleCard project={project} canManage={canManage} />
       <BaselinesCard project={project} canManage={canManage} />
+      <ProgressModeCard project={project} canManage={canManage} />
+      <ProjectRatesCard project={project} people={[...projectPeople(project).values()]} />
       <ModulesCard project={project} canManage={canManage} />
       <CopyCard project={project} canManage={canManage} />
-      {project.myRole === 'owner' && <DangerZone project={project} />}
+      {can(project, 'delete_project') && <DangerZone project={project} />}
 
       <ProjectDrawer open={editOpen} project={project} onClose={() => setEditOpen(false)} />
     </div>
@@ -245,43 +247,105 @@ function CategoriesCard({ project, canManage }: { project: Project; canManage: b
 
 function MembersCard({ project, canManage }: { project: Project; canManage: boolean }) {
   const users = useUsers();
+  const groups = useGroups(canManage);
+  const roles = useRoles();
+  const admin = useUserAdmin();
   const { add, update, remove } = useMembers(project._id);
-  const [userId, setUserId] = useState('');
+  const [kind, setKind] = useState<'user' | 'group' | 'invite'>('user');
+  const [target, setTarget] = useState('');
+  const [email, setEmail] = useState('');
   const [role, setRole] = useState<MemberRole>('member');
 
+  const roleOptions = useMemo(
+    () =>
+      (roles.data?.roles ?? []).map((r) => {
+        const badge = roleBadge(r.key ?? r._id, r.name);
+        return { value: r.key ?? r._id, label: r.name, description: r.key ? badge.description : `${r.permissions.length} permissions` };
+      }),
+    [roles.data],
+  );
+  const roleNames = useMemo(() => new Map((roles.data?.roles ?? []).map((r) => [r.key ?? r._id, r.name])), [roles.data]);
+
   const candidates = useMemo(() => {
+    if (kind === 'group') {
+      const taken = new Set(project.members.map((m) => m.group?._id).filter(Boolean));
+      return (groups.data ?? []).filter((g) => !taken.has(g._id)).map((g) => ({ value: g._id, label: g.name, description: `${g.members.length} member${g.members.length === 1 ? '' : 's'}` }));
+    }
     const taken = new Set([project.owner?._id, ...project.members.map((m) => m.user?._id)]);
-    return (users.data ?? []).filter((u) => u.isActive && !taken.has(u._id)).map((u) => ({ value: u._id, label: u.name, description: u.email }));
-  }, [users.data, project]);
+    return (users.data ?? [])
+      .filter((u) => u.isActive && !taken.has(u._id))
+      .map((u) => ({ value: u._id, label: u.name, description: u.kind === 'placeholder' ? 'Placeholder' : u.invited ? `${u.email} · invited` : u.email }));
+  }, [kind, users.data, groups.data, project]);
 
   const run = async (fn: () => Promise<unknown>, success: string) => {
     try {
       await fn();
       void toastSuccess(success);
+      return true;
     } catch (err) {
       void toastError(errorMessage(err));
+      return false;
     }
   };
+
+  const onAdd = async () => {
+    if (kind === 'invite') {
+      if (await run(() => admin.invite.mutateAsync({ email: email.trim(), projectId: project._id, role }), `Invitation sent to ${email.trim()}`)) setEmail('');
+      return;
+    }
+    const body = kind === 'group' ? { groupId: target, role } : { userId: target, role };
+    if (await run(() => add.mutateAsync(body), kind === 'group' ? 'Group added' : 'Member added')) setTarget('');
+  };
+
+  const memberKey = (m: Project['members'][number]) => m.user?._id ?? m.group?._id ?? '';
+  const memberName = (m: Project['members'][number]) => m.user?.name ?? m.group?.name ?? 'Deleted user';
 
   return (
     <Card title="Team members" icon={Users} className="xl:col-span-2">
       {canManage && (
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-[1fr_200px_auto] gap-3 items-end">
-          <Field label="Add a registered user">
-            <ThemedSelect options={candidates} value={userId} onChange={setUserId} placeholder={candidates.length ? 'Choose a person…' : 'Everyone is already a member'} searchable disabled={!candidates.length} />
-          </Field>
-          <Field label="Role">
-            <ThemedSelect options={ROLE_OPTIONS} value={role} onChange={(v) => setRole(v as MemberRole)} />
-          </Field>
-          <Button
-            variant="primary"
-            icon={UserPlus}
-            disabled={!userId}
-            loading={add.isPending}
-            onClick={() => run(() => add.mutateAsync({ userId, role }).then(() => setUserId('')), 'Member added')}
-          >
-            Add
-          </Button>
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700 space-y-3">
+          <FilterTabs<'user' | 'group' | 'invite'>
+            value={kind}
+            onChange={(k) => {
+              setKind(k);
+              setTarget('');
+            }}
+            tabs={[
+              { key: 'user', label: 'Person or placeholder', icon: UserPlus },
+              { key: 'group', label: 'Group', icon: UsersRound },
+              { key: 'invite', label: 'Invite by email', icon: Mail },
+            ]}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_220px_auto] gap-3 items-end">
+            {kind === 'invite' ? (
+              <Field label="Email address" htmlFor="invite-email" hint="They get an email link to choose a password and join this project.">
+                <input id="invite-email" type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
+              </Field>
+            ) : (
+              <Field label={kind === 'group' ? 'Group' : 'Person'}>
+                <ThemedSelect
+                  options={candidates}
+                  value={target}
+                  onChange={setTarget}
+                  placeholder={candidates.length ? (kind === 'group' ? 'Choose a group…' : 'Choose a person…') : kind === 'group' ? 'No groups to add' : 'Everyone is already a member'}
+                  searchable
+                  disabled={!candidates.length}
+                />
+              </Field>
+            )}
+            <Field label="Role">
+              <ThemedSelect options={roleOptions} value={role} onChange={(v) => setRole(v)} />
+            </Field>
+            <Button
+              variant="primary"
+              icon={kind === 'invite' ? Mail : UserPlus}
+              disabled={kind === 'invite' ? !/^\S+@\S+\.\S+$/.test(email.trim()) : !target}
+              loading={add.isPending || admin.invite.isPending}
+              onClick={onAdd}
+            >
+              {kind === 'invite' ? 'Invite' : 'Add'}
+            </Button>
+          </div>
         </div>
       )}
       <div className="overflow-x-auto">
@@ -289,7 +353,7 @@ function MembersCard({ project, canManage }: { project: Project; canManage: bool
           <thead className={theadCls}>
             <tr>
               <th className={th}>Name</th>
-              <th className={`${th} hidden sm:table-cell`}>Email</th>
+              <th className={`${th} hidden sm:table-cell`}>Details</th>
               <th className={th}>Role</th>
               <th className={`${th} text-right w-20`}>Actions</th>
             </tr>
@@ -303,33 +367,51 @@ function MembersCard({ project, canManage }: { project: Project; canManage: bool
               </td>
               <td className={td} />
             </tr>
-            {project.members.map((m) => (
-              <tr key={m.user?._id} className={rowCls}>
-                <td className={`${td} text-sm font-medium text-gray-900 dark:text-white`}>{m.user?.name ?? 'Deleted user'}</td>
-                <td className={`${td} hidden sm:table-cell text-sm text-gray-600 dark:text-gray-300`}>{m.user?.email}</td>
-                <td className={`${td} w-48`}>
-                  {canManage ? (
-                    <ThemedSelect compact options={ROLE_OPTIONS} value={m.role} onChange={(v) => run(() => update.mutateAsync({ userId: m.user._id, role: v as MemberRole }), 'Role updated')} />
-                  ) : (
-                    <Badge tone={PROJECT_ROLE[m.role].tone}>{PROJECT_ROLE[m.role].label}</Badge>
-                  )}
-                </td>
-                <td className={`${td} text-right`}>
-                  {canManage && (
-                    <IconButton
-                      icon={Trash2}
-                      label="Remove from project"
-                      tone="delete"
-                      onClick={async () => {
-                        if (await confirmDanger(`Remove ${m.user?.name}?`, 'They will lose access to this project.', 'Remove')) {
-                          await run(() => remove.mutateAsync(m.user._id), 'Member removed');
-                        }
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
+            {project.members.map((m) => {
+              const badge = roleBadge(m.role, roleNames.get(m.role));
+              return (
+                <tr key={memberKey(m)} className={rowCls}>
+                  <td className={`${td} text-sm font-medium text-gray-900 dark:text-white`}>
+                    <span className="inline-flex items-center gap-2">
+                      {m.group ? <UsersRound className="w-4 h-4 text-gray-400" /> : null}
+                      {memberName(m)}
+                      {m.user?.kind === 'placeholder' && <Badge tone="warning">Placeholder</Badge>}
+                      {m.user?.invited && <Badge tone="info">Invited</Badge>}
+                    </span>
+                  </td>
+                  <td className={`${td} hidden sm:table-cell text-sm text-gray-600 dark:text-gray-300`}>
+                    {m.group ? (
+                      <span title={m.group.members.map((u) => u.name).join(', ')}>
+                        Group · {m.group.members.length} member{m.group.members.length === 1 ? '' : 's'}
+                      </span>
+                    ) : (
+                      m.user?.email
+                    )}
+                  </td>
+                  <td className={`${td} w-56`}>
+                    {canManage ? (
+                      <ThemedSelect compact options={roleOptions} value={m.role} onChange={(v) => run(() => update.mutateAsync({ memberId: memberKey(m), role: v }), 'Role updated')} />
+                    ) : (
+                      <Badge tone={badge.tone}>{badge.label}</Badge>
+                    )}
+                  </td>
+                  <td className={`${td} text-right`}>
+                    {canManage && (
+                      <IconButton
+                        icon={Trash2}
+                        label="Remove from project"
+                        tone="delete"
+                        onClick={async () => {
+                          if (await confirmDanger(`Remove ${memberName(m)}?`, m.group ? 'Group members lose the access this membership gave them.' : 'They will lose access to this project.', 'Remove')) {
+                            await run(() => remove.mutateAsync(memberKey(m)), 'Member removed');
+                          }
+                        }}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

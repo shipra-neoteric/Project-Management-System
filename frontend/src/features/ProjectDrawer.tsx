@@ -16,7 +16,8 @@ import { toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { todayISO } from '@/lib/dates';
-import { atLeast, KIND_LABEL, PROJECT_STATUS } from '@/lib/status';
+import { KIND_LABEL, PROJECT_STATUS } from '@/lib/status';
+import { can } from '@/lib/permissions';
 import type { Project, ProjectKind, ProjectStatus } from '@/lib/types';
 
 const schema = z.object({
@@ -86,7 +87,7 @@ export function ProjectDrawer({ open, onClose, project, defaultParent }: { open:
     return [
       { value: '', label: 'None (top level)' },
       ...list
-        .filter((p) => !excluded.has(p._id) && !p.isTemplate && atLeast(p.myRole, 'member'))
+        .filter((p) => !excluded.has(p._id) && !p.isTemplate && can(p, 'add_subprojects'))
         .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'project' ? 1 : -1))
         .map((p) => ({ value: p._id, label: p.name, description: KIND_LABEL[p.kind] })),
     ];

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Types } from 'mongoose';
 import { z } from 'zod';
-import { loadProject, ROLE_RANK } from '../middleware/projectAccess';
+import { hasPerm, loadProject } from '../middleware/projectAccess';
 import { Journal } from '../models/Journal';
 import { Task, type PlanTask } from '../models/Task';
 import { parseMentions, recordComment } from '../services/activity';
@@ -32,7 +32,7 @@ taskActivityRouter.get('/activity', loadProject('viewer'), async (req, res) => {
   res.json({ activity: await journalsFor({ task: task._id }), watchers: task.watchers ?? [] });
 });
 
-taskActivityRouter.post('/comments', loadProject('member'), async (req, res) => {
+taskActivityRouter.post('/comments', loadProject('comment'), async (req, res) => {
   const { text } = parseBody(commentSchema, req.body);
   const task = await loadTask(req.project!._id, req.params.taskId);
   // Commenters watch the task from now on.
@@ -41,7 +41,7 @@ taskActivityRouter.post('/comments', loadProject('member'), async (req, res) => 
   res.status(201).json({ journal: await Journal.findById(journal._id).populate('user', 'name email').lean() });
 });
 
-taskActivityRouter.patch('/comments/:journalId', loadProject('member'), async (req, res) => {
+taskActivityRouter.patch('/comments/:journalId', loadProject('comment'), async (req, res) => {
   const { text } = parseBody(commentSchema, req.body);
   const journal = await Journal.findOne({ _id: assertObjectId(req.params.journalId, 'Comment'), task: req.params.taskId, kind: 'comment' });
   if (!journal) throw notFound('Comment');
@@ -53,11 +53,11 @@ taskActivityRouter.patch('/comments/:journalId', loadProject('member'), async (r
   res.json({ journal: await Journal.findById(journal._id).populate('user', 'name email').lean() });
 });
 
-taskActivityRouter.delete('/comments/:journalId', loadProject('member'), async (req, res) => {
+taskActivityRouter.delete('/comments/:journalId', loadProject('comment'), async (req, res) => {
   const journal = await Journal.findOne({ _id: assertObjectId(req.params.journalId, 'Comment'), task: req.params.taskId, kind: 'comment' });
   if (!journal) throw notFound('Comment');
   const own = String(journal.user) === req.user!._id.toString();
-  if (!own && ROLE_RANK[req.projectRole!] < ROLE_RANK.manager) throw forbidden('Only the author or a manager can delete this comment');
+  if (!own && !hasPerm(req, 'manage_project')) throw forbidden('Only the author or a manager can delete this comment');
   await journal.deleteOne();
   res.status(204).end();
 });
