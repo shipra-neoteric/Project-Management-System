@@ -49,5 +49,6 @@ export const MODULE_LABELS: Record<string, string> = {
   time_costs: 'Time & costs',
   budgets: 'Budgets',
   reports: 'Reports',
+  meetings: 'Meetings',
   activity: 'Activity',
 };

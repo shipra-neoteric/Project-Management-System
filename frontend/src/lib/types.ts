@@ -50,7 +50,7 @@ export interface WorkSchedule {
 }
 
 export type ProjectKind = 'project' | 'program' | 'portfolio';
-export type ProjectModule = 'gantt' | 'table' | 'board' | 'calendar' | 'team_planner' | 'resources' | 'time_costs' | 'budgets' | 'reports' | 'activity';
+export type ProjectModule = 'gantt' | 'table' | 'board' | 'calendar' | 'team_planner' | 'resources' | 'time_costs' | 'budgets' | 'reports' | 'meetings' | 'activity';
 export type GateStatus = 'pending' | 'passed' | 'failed';
 
 export interface LifecyclePhase {

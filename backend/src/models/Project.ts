@@ -3,7 +3,7 @@ import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mong
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed', 'archived'] as const;
 export const MEMBER_ROLES = ['manager', 'member', 'viewer'] as const;
 export const PROJECT_KINDS = ['project', 'program', 'portfolio'] as const;
-export const PROJECT_MODULES = ['gantt', 'table', 'board', 'calendar', 'team_planner', 'resources', 'time_costs', 'budgets', 'reports', 'activity'] as const;
+export const PROJECT_MODULES = ['gantt', 'table', 'board', 'calendar', 'team_planner', 'resources', 'time_costs', 'budgets', 'reports', 'meetings', 'activity'] as const;
 export type ProjectModule = (typeof PROJECT_MODULES)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 /** 'owner', a built-in role key ('manager' | 'member' | 'viewer') or a custom role id. */

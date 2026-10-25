@@ -3,6 +3,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { env } from './config/env';
 import { requireAuth } from './middleware/auth';
+import { changeEvents } from './middleware/changeEvents';
 import { errorHandler, notFoundHandler, requestId } from './middleware/errors';
 import { authRouter } from './routes/auth';
 import { dashboardRouter } from './routes/dashboard';
@@ -40,6 +41,8 @@ export function createApp() {
   );
   app.use(express.json({ limit: '1mb' }));
   app.use(requestId);
+  // Publishes an event after every successful change (live updates, webhooks, audit trail listen).
+  app.use(changeEvents);
 
   app.get('/', (_req, res) => {
     res.json({ name: 'Project Management System API', health: '/api/health' });
@@ -63,6 +66,10 @@ export function createApp() {
   app.use('/api/project-views', requireAuth, projectViewsRouter);
   app.use('/api/projects/:id', requireAuth, financeRouter);
   app.use('/api/projects', requireAuth, projectsRouter);
+  // [import-scheduling routes]
+  // [collaboration routes]
+  // [security-integrations routes]
+  // [platform routes]
   app.use('/api', requireAuth, timeRouter);
   app.use('/api', requireAuth, accessRouter);
 

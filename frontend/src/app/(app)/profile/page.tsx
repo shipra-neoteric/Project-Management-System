@@ -104,6 +104,8 @@ export default function ProfilePage() {
         </Card>
 
         <TimeOffCard userId={user._id} />
+        {/* [profile cards: import-scheduling] */}
+        {/* [profile cards: security-integrations] */}
 
         <Card title="Change password" icon={KeyRound}>
           <form

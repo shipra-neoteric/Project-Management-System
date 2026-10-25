@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Archive, BarChart3, CalendarDays, CalendarRange, Clock, FileBarChart, KanbanSquare, LayoutGrid, PiggyBank, Settings, Star, Table2, Users } from 'lucide-react';
+import { Activity, Archive, BarChart3, CalendarDays, CalendarRange, Clock, FileBarChart, KanbanSquare, LayoutGrid, PiggyBank, Presentation, Settings, Star, Table2, Users } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { TaskDrawerHost } from '@/components/gantt/TaskDrawer';
@@ -18,8 +18,8 @@ import { useTheme } from '@/lib/theme';
 import { can } from '@/lib/permissions';
 import type { ProjectModule, ProjectPermission } from '@/lib/types';
 
-type TabKey = 'overview' | 'gantt' | 'table' | 'board' | 'calendar' | 'team' | 'resources' | 'time' | 'budgets' | 'reports' | 'activity' | 'settings';
-const SUB_TABS: TabKey[] = ['overview', 'table', 'board', 'calendar', 'team', 'resources', 'time', 'budgets', 'reports', 'activity', 'settings'];
+type TabKey = 'overview' | 'gantt' | 'table' | 'board' | 'calendar' | 'team' | 'resources' | 'time' | 'budgets' | 'reports' | 'meetings' | 'activity' | 'settings';
+const SUB_TABS: TabKey[] = ['overview', 'table', 'board', 'calendar', 'team', 'resources', 'time', 'budgets', 'reports', 'meetings', 'activity', 'settings'];
 const TABS: { key: TabKey; label: string; icon: typeof BarChart3; module?: ProjectModule; perm?: ProjectPermission[] }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutGrid },
   { key: 'gantt', label: 'Gantt chart', icon: BarChart3, module: 'gantt' },
@@ -31,6 +31,7 @@ const TABS: { key: TabKey; label: string; icon: typeof BarChart3; module?: Proje
   { key: 'time', label: 'Time & costs', icon: Clock, module: 'time_costs', perm: ['log_time', 'view_time', 'view_costs', 'log_costs'] },
   { key: 'budgets', label: 'Budgets', icon: PiggyBank, module: 'budgets', perm: ['view_budgets'] },
   { key: 'reports', label: 'Reports', icon: FileBarChart, module: 'reports', perm: ['log_time', 'view_time', 'view_costs'] },
+  { key: 'meetings', label: 'Meetings', icon: Presentation, module: 'meetings' },
   { key: 'activity', label: 'Activity', icon: Activity, module: 'activity' },
   { key: 'settings', label: 'Settings & team', icon: Settings },
 ];

@@ -55,6 +55,8 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { href: '/projects', label: 'Projects', icon: FolderKanban },
       { href: '/timesheet', label: 'My timesheet', icon: Timer },
       { href: '/planner', label: 'Resource planner', icon: CalendarRange },
+      // [workspace nav: collaboration]
+      // [workspace nav: import-scheduling]
     ],
   },
   {
@@ -65,6 +67,8 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { href: '/roles', label: 'Roles & permissions', icon: KeyRound, perm: 'admin' },
       { href: '/work-settings', label: 'Work settings', icon: ListChecks, perm: 'manage_work_settings' },
       { href: '/settings', label: 'Organisation', icon: Settings, perm: 'admin' },
+      // [admin nav: security-integrations]
+      // [admin nav: platform]
     ],
   },
 ];
