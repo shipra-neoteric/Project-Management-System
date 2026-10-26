@@ -30,7 +30,10 @@ export default function ResetPasswordPage() {
     if (password !== confirm) return setError('Passwords do not match');
     setLoading(true);
     try {
-      signIn(await api<{ token: string; user: User }>('/auth/reset-password', { method: 'POST', body: { token, password } }));
+      const res = await api<{ token: string; user: User } | { twoFactorRequired: true; challenge: string }>('/auth/reset-password', { method: 'POST', body: { token, password } });
+      // Accounts with two-factor authentication still need their code: sign in with the new password.
+      if ('twoFactorRequired' in res) return router.replace('/login?reset=1');
+      signIn(res);
       router.replace('/dashboard');
     } catch (err) {
       setError(errorMessage(err));

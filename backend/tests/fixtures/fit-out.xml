@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project">
+  <SaveVersion>14</SaveVersion>
+  <Name>Fit-out.xml</Name>
+  <Title>Level 5 Fit-out</Title>
+  <StartDate>2026-11-02T08:00:00</StartDate>
+  <MinutesPerDay>480</MinutesPerDay>
+  <MinutesPerWeek>2400</MinutesPerWeek>
+  <Tasks>
+    <Task>
+      <UID>0</UID><ID>0</ID><Name>Level 5 Fit-out</Name><OutlineLevel>0</OutlineLevel><Summary>1</Summary>
+      <Start>2026-11-02T08:00:00</Start><Finish>2026-11-20T17:00:00</Finish><Duration>PT120H0M0S</Duration>
+    </Task>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name>Design &amp; approvals</Name><OutlineLevel>1</OutlineLevel><Summary>1</Summary>
+      <Start>2026-11-02T08:00:00</Start><Finish>2026-11-12T08:00:00</Finish><Duration>PT64H0M0S</Duration>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Site survey</Name><OutlineLevel>2</OutlineLevel>
+      <Start>2026-11-02T08:00:00</Start><Finish>2026-11-03T17:00:00</Finish><Duration>PT16H0M0S</Duration>
+      <Work>PT16H0M0S</Work><PercentComplete>100</PercentComplete><Notes>Measure the floor plate, check services.</Notes>
+    </Task>
+    <Task>
+      <UID>3</UID><ID>3</ID><Name>Detailed drawings</Name><OutlineLevel>2</OutlineLevel>
+      <Start>2026-11-05T08:00:00</Start><Finish>2026-11-11T17:00:00</Finish><Duration>PT40H0M0S</Duration>
+      <Work>PT60H0M0S</Work><PercentComplete>20</PercentComplete>
+      <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type><LinkLag>4800</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>4</UID><ID>4</ID><Name>Client approval</Name><OutlineLevel>2</OutlineLevel><Milestone>1</Milestone>
+      <Start>2026-11-12T08:00:00</Start><Finish>2026-11-12T08:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>5</UID><ID>5</ID><Name>Partitions, ceilings</Name><OutlineLevel>1</OutlineLevel>
+      <Start>2026-11-12T08:00:00</Start><Finish>2026-11-16T17:00:00</Finish><Duration>PT24H0M0S</Duration>
+      <PredecessorLink><PredecessorUID>4</PredecessorUID><Type>3</Type><LinkLag>0</LinkLag></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>6</UID><ID>6</ID><IsNull>1</IsNull>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>0</UID><ID>0</ID><Name>Unassigned</Name></Resource>
+    <Resource><UID>1</UID><ID>1</ID><Name>Alice Admin</Name><EmailAddress>alice@example.com</EmailAddress><Type>1</Type></Resource>
+    <Resource><UID>2</UID><ID>2</ID><Name>Carpentry crew</Name><Type>1</Type></Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>2</TaskUID><ResourceUID>1</ResourceUID></Assignment>
+    <Assignment><UID>2</UID><TaskUID>5</TaskUID><ResourceUID>2</ResourceUID></Assignment>
+    <Assignment><UID>3</UID><TaskUID>3</TaskUID><ResourceUID>-65535</ResourceUID></Assignment>
+  </Assignments>
+</Project>

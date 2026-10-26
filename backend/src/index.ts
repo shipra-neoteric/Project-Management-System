@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { env } from './config/env';
 import { createApp } from './app';
 import { backfill } from './services/catalog';
+import { startReminderSchedule } from './services/reminders';
 
 async function main() {
   await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 15_000 });
@@ -11,6 +12,8 @@ async function main() {
   const server = createApp().listen(env.PORT, () => {
     console.log(`API listening on http://localhost:${env.PORT} (allowed origins: ${env.allowedOrigins.join(', ')})`);
   });
+  // Date reminders every hour (an external cron can also call POST /api/jobs/reminders).
+  if (env.NODE_ENV !== 'test') startReminderSchedule();
 
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, shutting down`);

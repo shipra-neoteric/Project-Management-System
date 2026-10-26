@@ -4,10 +4,13 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../config/env';
-import { requireAuth, signToken } from '../middleware/auth';
+import { requireAdmin, requireAuth, requireSession, signToken } from '../middleware/auth';
+import { Setting } from '../models/Setting';
 import { publicUser, User, type UserDoc } from '../models/User';
+import { enrolment, newBackupCodes, newSecret, readChallenge, sha256, signChallenge, verifySecondFactor } from '../services/twoFactor';
 import { renderEmail, sendMail } from '../services/mailer';
-import { badRequest, conflict, HttpError, parseBody } from '../utils/http';
+import { auditSecurity } from '../services/audit';
+import { assertObjectId, badRequest, conflict, HttpError, notFound, parseBody } from '../utils/http';
 
 export const authRouter = Router();
 
@@ -70,10 +73,20 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   const body = parseBody(loginSchema, req.body);
   const user = await User.findOne({ email: body.email }).select('+passwordHash');
   const valid = user?.passwordHash ? await bcrypt.compare(body.password, user.passwordHash) : false;
-  if (!user || !valid) throw new HttpError(401, 'UNAUTHENTICATED', 'Incorrect email or password');
+  if (!user || !valid) {
+    auditSecurity(req, 'auth.login_failed', user ? { id: String(user._id), name: user.name } : null, { email: body.email });
+    throw new HttpError(401, 'UNAUTHENTICATED', 'Incorrect email or password');
+  }
   if (!user.isActive) throw new HttpError(403, 'FORBIDDEN', 'Your account has been deactivated. Contact an administrator.');
-  res.json({ token: signToken(user), user: publicUser(user) });
+  auditSecurity(req, user.totpEnabled ? 'auth.login_password_ok' : 'auth.login', { id: String(user._id), name: user.name }, { email: body.email });
+  res.json(sessionOrChallenge(user));
 });
+
+/** A session — or, when two-factor authentication is on, a short-lived challenge for the second step. */
+function sessionOrChallenge(user: UserDoc) {
+  if (user.totpEnabled) return { twoFactorRequired: true as const, challenge: signChallenge(user) };
+  return { token: signToken(user), user: publicUser(user) };
+}
 
 authRouter.get('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user!) });
@@ -121,7 +134,7 @@ authRouter.patch('/me', requireAuth, async (req, res) => {
   res.json({ user: publicUser(user) });
 });
 
-authRouter.post('/change-password', requireAuth, authLimiter, async (req, res) => {
+authRouter.post('/change-password', requireAuth, requireSession, authLimiter, async (req, res) => {
   const body = parseBody(z.object({ currentPassword: z.string().min(1, 'Enter your current password'), newPassword: password }), req.body);
   const user = await User.findById(req.user!._id).select('+passwordHash');
   if (!user?.passwordHash || !(await bcrypt.compare(body.currentPassword, user.passwordHash))) throw badRequest('Your current password is incorrect');
@@ -174,5 +187,107 @@ authRouter.post('/reset-password', authLimiter, async (req, res) => {
   user.resetTokenExpires = null;
   user.emailVerified = true; // they proved they own the mailbox
   await user.save();
-  res.json({ token: signToken(user), user: publicUser(user) });
+  // A reset link proves the mailbox, not the authenticator: 2FA still applies.
+  res.json(sessionOrChallenge(user));
+});
+
+// ---- Two-factor authentication (TOTP + backup codes) ------------------------------------------
+
+/** Stricter limit for second-factor attempts (6-digit codes must not be brute-forced). */
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) =>
+    res.status(429).json({ error: { message: 'Too many codes tried. Please wait 15 minutes and sign in again.', code: 'RATE_LIMITED', requestId: req.requestId } }),
+});
+
+const codeSchema = z.object({ code: z.string().trim().min(6, 'Enter the 6-digit code').max(20) });
+const withSecrets = (id: unknown) => User.findById(id).select('+totpSecret +totpPendingSecret +totpBackupCodes +totpLastStep +passwordHash');
+
+/** POST /auth/2fa/verify — second sign-in step: { challenge, code } → session. */
+authRouter.post('/2fa/verify', twoFactorLimiter, async (req, res) => {
+  const body = parseBody(z.object({ challenge: z.string().min(10).max(2000), code: z.string().trim().min(6).max(20) }), req.body);
+  const userId = readChallenge(body.challenge);
+  if (!userId) throw new HttpError(401, 'UNAUTHENTICATED', 'Your sign-in took too long. Please enter your password again.');
+  const user = await withSecrets(userId);
+  if (!user || !user.isActive || !user.totpEnabled) throw new HttpError(401, 'UNAUTHENTICATED', 'Please sign in again');
+  if (!(await verifySecondFactor(user, body.code))) {
+    auditSecurity(req, 'auth.2fa_failed', { id: String(user._id), name: user.name }, {});
+    throw new HttpError(401, 'INVALID_CODE', 'That code is not valid. Try the current code from your app or a backup code.');
+  }
+  res.json({ token: signToken(user), user: publicUser(user), backupCodesLeft: user.totpBackupCodes?.length ?? 0 });
+});
+
+authRouter.get('/2fa', requireAuth, async (req, res) => {
+  const user = await withSecrets(req.user!._id);
+  const org = await Setting.findOne({ key: 'org' }).select('require2fa').lean();
+  res.json({ enabled: !!user?.totpEnabled, backupCodesLeft: user?.totpBackupCodes?.length ?? 0, required: !!org?.require2fa, sso: !!user?.ssoSubject });
+});
+
+/** Starts enrolment: a new secret (not active until confirmed) with its QR code. */
+authRouter.post('/2fa/setup', requireAuth, requireSession, async (req, res) => {
+  const user = await withSecrets(req.user!._id);
+  if (!user) throw new HttpError(401, 'UNAUTHENTICATED', 'Please sign in');
+  if (user.totpEnabled) throw conflict('Two-factor authentication is already on. Turn it off first to set up a new device.');
+  const secret = newSecret();
+  user.totpPendingSecret = secret;
+  await user.save();
+  res.json(await enrolment(user, secret));
+});
+
+/** Confirms enrolment with a code from the app; returns backup codes (shown once). */
+authRouter.post('/2fa/enable', requireAuth, requireSession, twoFactorLimiter, async (req, res) => {
+  const { code } = parseBody(codeSchema, req.body);
+  const user = await withSecrets(req.user!._id);
+  if (!user?.totpPendingSecret) throw badRequest('Start the setup first');
+  if (!(await verifySecondFactor(user, code, user.totpPendingSecret))) throw badRequest('That code is not valid. Check the time on your phone and try again.');
+  const backupCodes = newBackupCodes();
+  user.totpSecret = user.totpPendingSecret;
+  user.totpPendingSecret = null;
+  user.totpEnabled = true;
+  user.totpBackupCodes = backupCodes.map(sha256);
+  await user.save();
+  res.json({ enabled: true, backupCodes, user: publicUser(user) });
+});
+
+/** New set of backup codes (old ones stop working). Needs a current code. */
+authRouter.post('/2fa/backup-codes', requireAuth, requireSession, twoFactorLimiter, async (req, res) => {
+  const { code } = parseBody(codeSchema, req.body);
+  const user = await withSecrets(req.user!._id);
+  if (!user?.totpEnabled) throw badRequest('Two-factor authentication is off');
+  if (!(await verifySecondFactor(user, code))) throw badRequest('That code is not valid');
+  const backupCodes = newBackupCodes();
+  user.totpBackupCodes = backupCodes.map(sha256);
+  await user.save();
+  res.json({ backupCodes });
+});
+
+/** Turns 2FA off: needs the password (when the account has one) and a current or backup code. */
+authRouter.post('/2fa/disable', requireAuth, requireSession, twoFactorLimiter, async (req, res) => {
+  const body = parseBody(z.object({ password: z.string().max(128).optional().default(''), code: z.string().trim().min(6).max(20) }), req.body);
+  const user = await withSecrets(req.user!._id);
+  if (!user?.totpEnabled) throw badRequest('Two-factor authentication is already off');
+  if (user.passwordHash && !(await bcrypt.compare(body.password, user.passwordHash))) throw badRequest('Your password is not correct');
+  if (!(await verifySecondFactor(user, body.code))) throw badRequest('That code is not valid');
+  const org = await Setting.findOne({ key: 'org' }).select('require2fa').lean();
+  if (org?.require2fa && !user.ssoSubject) throw badRequest('Your organisation requires two-factor authentication');
+  user.totpEnabled = false;
+  user.totpSecret = null;
+  user.totpBackupCodes = [];
+  await user.save();
+  res.json({ enabled: false, user: publicUser(user) });
+});
+
+/** Administrators can switch 2FA off for someone who lost their phone and backup codes. */
+authRouter.post('/2fa/reset/:userId', requireAuth, requireSession, requireAdmin, async (req, res) => {
+  const user = await withSecrets(assertObjectId(req.params.userId, 'User'));
+  if (!user) throw notFound('User');
+  user.totpEnabled = false;
+  user.totpSecret = null;
+  user.totpPendingSecret = null;
+  user.totpBackupCodes = [];
+  await user.save();
+  res.json({ user: publicUser(user) });
 });

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { loadProject } from '../middleware/projectAccess';
 import { Resource } from '../models/Resource';
 import { Task } from '../models/Task';
-import { assertObjectId, notFound, parseBody } from '../utils/http';
+import { assertObjectId, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Mounted at /api/projects/:id/resources */
 export const resourcesRouter = Router({ mergeParams: true });
@@ -28,7 +28,7 @@ resourcesRouter.post('/', loadProject('manage_resources'), async (req, res) => {
 });
 
 resourcesRouter.patch('/:resourceId', loadProject('manage_resources'), async (req, res) => {
-  const body = parseBody(resourceSchema.partial(), req.body);
+  const body = parseBody(patchSchema(resourceSchema), req.body);
   const resource = await Resource.findOneAndUpdate(
     { _id: assertObjectId(req.params.resourceId, 'Resource'), project: req.project!._id },
     { $set: body },

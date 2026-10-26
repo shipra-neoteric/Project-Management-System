@@ -249,6 +249,23 @@ describe('Phase 4 & 5 API', () => {
     expect((await request(app).delete(`/api/users/${dan._id}`).set(auth(admin))).status).toBe(204);
   });
 
+  it('keeps fields a PATCH does not mention', async () => {
+    const g = (await request(app).post('/api/groups').set(auth(admin)).send({ name: 'Patch group', description: 'Keep me', members: [carolId] })).body.group;
+    const renamed = (await request(app).patch(`/api/groups/${g._id}`).set(auth(admin)).send({ name: 'Renamed group' })).body.group;
+    expect(renamed).toMatchObject({ name: 'Renamed group', description: 'Keep me', members: [carolId] });
+
+    const typeId = (await request(app).get('/api/work-settings').set(auth(admin))).body.costTypes[0]._id;
+    const b = (await request(app).post(`/api/projects/${projectId}/budgets`).set(auth(admin)).send({ name: 'B1', description: 'D', labor: [{ label: 'L', hours: 2, rate: 10 }], material: [{ costType: typeId, units: 1 }] })).body.budget;
+    const b2 = (await request(app).patch(`/api/projects/${projectId}/budgets/${b._id}`).set(auth(admin)).send({ name: 'B2' })).body.budget;
+    expect(b2).toMatchObject({ name: 'B2', description: 'D' });
+    expect(b2.labor).toHaveLength(1);
+    expect(b2.material).toHaveLength(1);
+
+    const e = (await request(app).post('/api/time-entries').set(auth(admin)).send({ project: projectId, date: '2026-11-04', hours: 1, comment: 'Keep comment' })).body.entry;
+    const e2 = (await request(app).patch(`/api/time-entries/${e._id}`).set(auth(admin)).send({ hours: 2 })).body.entry;
+    expect(e2).toMatchObject({ hours: 2, comment: 'Keep comment' });
+  });
+
   it('applies workflow rules to custom roles', async () => {
     const role = (await request(app).post('/api/roles').set(auth(admin)).send({ name: 'Site lead', permissions: ['edit_tasks'] })).body.role;
     const [neu, closed] = [ws.statuses.find((s) => s.name === 'New')!._id, ws.statuses.find((s) => s.name === 'Closed')!._id];

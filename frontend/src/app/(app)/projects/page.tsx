@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, Bookmark, ChevronDown, ChevronRight, Columns3, Download, FolderKanban, FolderOpen, LayoutTemplate, Pencil, Plus, Save, Star, Trash2 } from 'lucide-react';
+import { Archive, Bookmark, ChevronDown, ChevronRight, Columns3, Download, FileUp, FolderKanban, FolderOpen, LayoutTemplate, Pencil, Plus, Save, Star, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -10,6 +10,7 @@ import { Alert, EmptyState, PageLoader, ProgressBar } from '@/components/ui/Feed
 import { Sec } from '@/components/ui/Field';
 import { FilterTabs, KpiCard, KpiGrid, Page, PageHeader, SearchInput } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
+import { ImportPlanDrawer } from '@/features/ImportPlanDrawer';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
 import { useDeleteProject, useFavorite, useProjects, useProjectViews, useWorkSettings } from '@/features/queries';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
@@ -54,6 +55,7 @@ export default function ProjectsPage() {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
 
   const projectFields: CustomField[] = (ws?.customFields ?? []).filter((f) => f.scope === 'project');
@@ -225,12 +227,18 @@ export default function ProjectsPage() {
         subtitle="Portfolios, programs and projects you own or have been invited to"
         actions={
           hasGlobal(user, 'create_projects') && (
-            <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
-              New project
-            </Button>
+            <>
+              <Button icon={FileUp} onClick={() => setImportOpen(true)}>
+                Import plan
+              </Button>
+              <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
+                New project
+              </Button>
+            </>
           )
         }
       />
+      <ImportPlanDrawer open={importOpen} onClose={() => setImportOpen(false)} />
 
       <KpiGrid>
         <KpiCard label="Projects" value={counts.all} icon={FolderKanban} iconColor="text-blue-500" active={scope === 'all'} onClick={() => setScope('all')} />

@@ -71,6 +71,8 @@ export function changeEvents(req: Request, res: Response, next: NextFunction) {
       projectId: projectId ?? newProject,
       entityId: action === 'created' ? (createdId ?? null) : (ids[ids.length - 1] ?? createdId ?? null),
       requestId: req.requestId,
+      ip: req.ip,
+      userAgent: req.get('user-agent')?.slice(0, 300),
       body: req.is('multipart/form-data') ? undefined : redact(req.body),
     });
   });

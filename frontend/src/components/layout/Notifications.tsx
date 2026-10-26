@@ -1,6 +1,6 @@
 'use client';
 
-import { AtSign, Bell, CheckCheck, MessageSquare, Pencil, UserCheck } from 'lucide-react';
+import { AlarmClock, AlertTriangle, AtSign, Bell, CheckCheck, MessageSquare, Pencil, Presentation, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -18,20 +18,27 @@ const REASON: Record<AppNotification['reason'], { text: string; icon: typeof Bel
   commented: { text: 'commented on', icon: MessageSquare },
   updated: { text: 'updated', icon: Pencil },
   watched: { text: 'updated', icon: Pencil },
+  meeting: { text: 'invited you to', icon: Presentation },
+  due_soon: { text: 'coming up:', icon: AlarmClock },
+  overdue: { text: 'overdue:', icon: AlertTriangle },
 };
+
+/** Date reminders come from the system, not a person. */
+const isReminder = (n: AppNotification) => n.reason === 'due_soon' || n.reason === 'overdue';
 
 export function useOpenNotification() {
   const router = useRouter();
   const markRead = useMarkRead();
   return (n: AppNotification) => {
     if (!n.read) markRead.mutate({ ids: [n._id] });
+    if (n.link) return router.push(n.link);
     router.push(`/projects/${n.project}${n.task ? `?task=${n.task}` : ''}`);
     if (n.task) window.dispatchEvent(new CustomEvent(OPEN_TASK_EVENT, { detail: { projectId: n.project, taskId: n.task } }));
   };
 }
 
 export function NotificationItem({ n, onOpen, compact }: { n: AppNotification; onOpen: (n: AppNotification) => void; compact?: boolean }) {
-  const { icon: Icon, text } = REASON[n.reason];
+  const { icon: Icon, text } = REASON[n.reason] ?? REASON.updated;
   return (
     <button type="button" onClick={() => onOpen(n)} className={cn('w-full flex items-start gap-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50', compact ? 'px-4 py-3' : 'px-5 py-4')}>
       <span className="relative mt-0.5">
@@ -42,7 +49,14 @@ export function NotificationItem({ n, onOpen, compact }: { n: AppNotification; o
       </span>
       <span className="min-w-0 flex-1">
         <span className={cn('block text-sm text-gray-900 dark:text-white', !n.read && 'font-medium')}>
-          {n.actor?.name ?? 'Someone'} <span className="text-gray-500 dark:text-gray-400 font-normal">{text}</span> {n.taskName || n.projectName}
+          {isReminder(n) ? (
+            <span className={n.reason === 'overdue' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}>{n.reason === 'overdue' ? 'Overdue' : 'Coming up'}</span>
+          ) : (
+            <>
+              {n.actor?.name ?? 'Someone'} <span className="text-gray-500 dark:text-gray-400 font-normal">{text}</span>
+            </>
+          )}{' '}
+          {n.taskName || n.projectName}
         </span>
         {n.summary && <span className={cn('block text-xs text-gray-500 dark:text-gray-400 mt-0.5 whitespace-pre-line', compact && 'line-clamp-2')}>{n.summary}</span>}
         <span className="block text-[11px] text-gray-400 mt-1">

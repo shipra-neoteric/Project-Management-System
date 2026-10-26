@@ -9,7 +9,7 @@ import { User } from '../models/User';
 import { isISODate, todayISO } from '../scheduling/calendar';
 import { accessFor, projectPeopleIds } from '../services/permissions';
 import { budgetExists, ensureFinanceDefaults, repriceTime, round2, summarizeBudgets } from '../services/costing';
-import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
+import { assertObjectId, badRequest, forbidden, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Mounted at /api/projects/:id — cost entries, budgets, project hourly rates and reports. */
 export const financeRouter = Router({ mergeParams: true });
@@ -60,7 +60,7 @@ financeRouter.post('/cost-entries', loadProject('log_costs'), async (req, res) =
 });
 
 financeRouter.patch('/cost-entries/:entryId', loadProject('log_costs'), async (req, res) => {
-  const body = parseBody(costEntrySchema.partial(), req.body);
+  const body = parseBody(patchSchema(costEntrySchema), req.body);
   const entry = await CostEntry.findOne({ _id: assertObjectId(req.params.entryId, 'Cost entry'), project: req.project!._id });
   if (!entry) throw notFound('Cost entry');
   if (String(entry.user) !== String(req.user!._id) && !hasPerm(req, 'manage_budgets')) throw forbidden('You can only change your own cost entries');
@@ -116,7 +116,7 @@ financeRouter.post('/budgets', loadProject('manage_budgets'), async (req, res) =
 });
 
 financeRouter.patch('/budgets/:budgetId', loadProject('manage_budgets'), async (req, res) => {
-  const body = parseBody(budgetSchema.partial(), req.body);
+  const body = parseBody(patchSchema(budgetSchema), req.body);
   const budget = await Budget.findOne({ _id: assertObjectId(req.params.budgetId, 'Budget'), project: req.project!._id });
   if (!budget) throw notFound('Budget');
   budget.set({ ...body, ...(body.material ? { material: await prepareMaterial(body.material) } : {}) });

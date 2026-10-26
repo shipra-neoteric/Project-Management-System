@@ -383,6 +383,58 @@ async function main() {
     '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140" fill="#e5e7eb"/><path d="M40 30 L120 80 L90 120" stroke="#ef4444" stroke-width="4" fill="none"/><text x="12" y="20" font-size="12" font-family="sans-serif">Entrance tile – crack</text></svg>',
   );
 
+  step('Meetings, minutes and action items');
+  type Meeting = { _id: string; agenda: { _id: string; title: string }[] };
+  const meetings = `${base}/meetings`;
+  const at = (date: string, time: string) => `${date}T${time}:00+05:30`;
+  const siteTeam = [id('priya'), id('rahul'), id('anita'), id('vikram'), id('arjun')];
+  // Weekly coordination meeting: a series from four weeks ago to four weeks ahead.
+  await call(meetings, 'POST', {
+    title: 'Weekly site coordination',
+    location: 'Site office, Level 4',
+    startsAt: at(addDays(start, 3), '10:00'),
+    durationMinutes: 45,
+    participants: siteTeam,
+    agenda: [
+      { title: 'Safety observations', durationMinutes: 5, presenter: id('arjun') },
+      { title: 'Progress against the baseline', durationMinutes: 15, presenter: id('priya') },
+      { title: 'MEP coordination and chiller lead time', durationMinutes: 15, presenter: id('anita'), task: tid('HVAC ducting') },
+      { title: 'Deliveries for next week', durationMinutes: 10, presenter: id('vikram') },
+    ],
+    recurrence: { frequency: 'weekly', until: addDays(TODAY, 28) },
+  });
+  // A past client review with minutes, an action item and attendance, then closed.
+  const review = (
+    await call<{ meeting: Meeting }>(meetings, 'POST', {
+      title: 'Design review with client',
+      location: 'Client HQ, Board room 2',
+      startsAt: at(addDays(start, 6), '15:00'),
+      durationMinutes: 60,
+      participants: [id('priya'), id('neha'), id('vikram')],
+      agenda: [
+        { title: 'Concept option B walkthrough', durationMinutes: 25, presenter: id('priya'), notes: '<p>Open-plan workstations for 132 seats, five meeting rooms.</p>' },
+        { title: 'Finishes and furniture palette', durationMinutes: 20, presenter: id('neha') },
+        { title: 'Budget and schedule', durationMinutes: 15, presenter: id('me') },
+      ],
+    })
+  ).meeting;
+  await call(`${meetings}/${review._id}`, 'PATCH', {
+    minutes:
+      '<h3>Decisions</h3><ul><li>Client <strong>approved concept option B</strong>.</li><li>One extra meeting room to be added near the east core.</li></ul><h3>Notes</h3><p>Finishes palette accepted with a warmer wood tone. Budget stays within the approved envelope.</p>',
+  });
+  await call(`${meetings}/${review._id}/agenda/${review.agenda[1]._id}/actions`, 'POST', {
+    title: 'Share revised finishes board with client',
+    assignee: id('neha'),
+    dueDate: addDays(TODAY, 5),
+  });
+  for (const k of ['priya', 'neha'] as const) await call(`${meetings}/${review._id}/attendance`, 'POST', { userId: id(k), attended: true });
+  await call(`${meetings}/${review._id}/attendance`, 'POST', { userId: id('vikram'), attended: false });
+  await call(`${meetings}/${review._id}/close`, 'POST');
+  // Rich-text task notes.
+  await call(`${base}/tasks/${tid('Partitions & ceilings')}`, 'PATCH', {
+    notes: '<p><strong>Scope:</strong> gypsum partitions and grid ceiling on the whole floor.</p><ul><li>East wing framing complete</li><li>West wing starts after the drawings are approved</li></ul><p>See the <a href="https://example.com/level-4-layout">level 4 layout</a>.</p>',
+  });
+
   step('Saved views and project lists');
   const view = (name: string, kind: string, isPublic: boolean, config: Record<string, unknown>) =>
     call(`${base}/views`, 'POST', { name, kind, isPublic, config: { filters: [], search: '', sort: [], groupBy: null, columns: [], options: {}, ...config } });

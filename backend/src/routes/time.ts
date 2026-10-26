@@ -9,7 +9,7 @@ import { User } from '../models/User';
 import { addDays, isISODate, parseISODate } from '../scheduling/calendar';
 import { effectiveRate, ensureFinanceDefaults, repriceTime, round2 } from '../services/costing';
 import { accessFilter, accessFor, hasGlobal, projectPeopleIds } from '../services/permissions';
-import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
+import { assertObjectId, badRequest, forbidden, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Time entries (incl. the weekly timesheet), default hourly rates, time off and the resource planner. */
 export const timeRouter = Router();
@@ -119,7 +119,7 @@ async function loadEntry(req: Express.Request, id: unknown) {
 }
 
 timeRouter.patch('/time-entries/:entryId', async (req, res) => {
-  const body = parseBody(entrySchema.omit({ project: true, user: true }).partial(), req.body);
+  const body = parseBody(patchSchema(entrySchema.omit({ project: true, user: true })), req.body);
   const entry = await loadEntry(req, req.params.entryId);
   const project = (await Project.findById(entry.project))!;
   await assertTask(project, body.task);

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiUpload } from '@/lib/api';
+import { useLivePollInterval } from '@/lib/liveStatus';
 import type {
   Dashboard,
   LinkType,
@@ -252,7 +253,7 @@ export function usePlan(id: string) {
   return useQuery({
     queryKey: keys.plan(id),
     queryFn: () => api<Plan>(`/projects/${id}/tasks`),
-    refetchInterval: 15_000, // pick up teammates' changes
+    refetchInterval: useLivePollInterval(), // live updates refresh it; slow polling only as a fallback
   });
 }
 
@@ -426,7 +427,7 @@ export function useTaskActivity(projectId: string, taskId: string) {
   return useQuery({
     queryKey: keys.activity(taskId),
     queryFn: () => api<{ activity: JournalEntry[]; watchers: string[] }>(`/projects/${projectId}/tasks/${taskId}/activity`),
-    refetchInterval: 20_000,
+    refetchInterval: useLivePollInterval(),
   });
 }
 
@@ -475,7 +476,8 @@ export function useNotifications(unreadOnly = false) {
   return useQuery({
     queryKey: [...keys.notifications, unreadOnly],
     queryFn: () => api<{ notifications: AppNotification[]; unreadCount: number }>(`/notifications?limit=50${unreadOnly ? '&unread=1' : ''}`),
-    refetchInterval: 30_000,
+    // Reminders are created by a background job, so keep a slow poll even while live.
+    refetchInterval: useLivePollInterval(300_000),
   });
 }
 
@@ -483,7 +485,7 @@ export function useUnreadCount(enabled = true) {
   return useQuery({
     queryKey: [...keys.notifications, 'count'],
     queryFn: async () => (await api<{ unreadCount: number }>('/notifications/count')).unreadCount,
-    refetchInterval: 30_000,
+    refetchInterval: useLivePollInterval(300_000),
     enabled,
   });
 }

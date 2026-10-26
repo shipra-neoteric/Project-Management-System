@@ -9,7 +9,8 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { Alert } from '@/components/ui/Feedback';
-import { Field, inputCls, Sec, textareaCls } from '@/components/ui/Field';
+import { Field, inputCls, Sec } from '@/components/ui/Field';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { useCreateProject, useProjects, useUpdateProject, type CopyOptions } from '@/features/queries';
 import { toastSuccess } from '@/lib/alerts';
@@ -22,7 +23,7 @@ import type { Project, ProjectKind, ProjectStatus } from '@/lib/types';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Project name is required').max(120),
-  description: z.string().max(2000),
+  description: z.string().max(10000, 'The description is too long'),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a start date'),
   status: z.enum(['active', 'on_hold', 'completed', 'archived']),
   key: z.string().trim().toUpperCase().regex(/^([A-Z][A-Z0-9]{1,9})?$/, '2–10 letters/digits, starting with a letter'),
@@ -165,7 +166,11 @@ export function ProjectDrawer({ open, onClose, project, defaultParent }: { open:
               </Field>
             )}
             <Field label="Description" htmlFor="p-desc" className="sm:col-span-2">
-              <textarea id="p-desc" rows={4} className={textareaCls} placeholder="Scope, goals, notes…" {...register('description')} />
+              <Controller
+                control={control}
+                name="description"
+                render={({ field }) => <RichTextEditor id="p-desc" value={field.value ?? ''} onChange={field.onChange} placeholder="Scope, goals, notes…" />}
+              />
             </Field>
             <label className="sm:col-span-2 flex items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
               <input type="checkbox" className="w-4 h-4 accent-[var(--theme-primary)]" {...register('isTemplate')} />

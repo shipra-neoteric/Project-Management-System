@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useIsMutating } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ImportPlanButton } from '@/features/ImportPlanDrawer';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Alert, EmptyState, PageLoader } from '@/components/ui/Feedback';
 import { FilterTabs } from '@/components/ui/Layout';
@@ -331,6 +332,7 @@ export function GanttView() {
           ) : (
             <IconButton icon={RefreshCw} label="Refresh" onClick={refetch} />
           )}
+          {canEdit && <ImportPlanButton projectId={projectId} />}
           <ExportButton tone="green" icon={Download} label="Excel" disabled={!rows.length} onClick={() => void exportTasksXlsx(project, rows, resourceNames)} />
           <ExportButton tone="red" icon={FileText} label="PDF" disabled={!rows.length} onClick={() => run(() => exportPdf(project, rows, resourceNames))} />
           <ExportButton

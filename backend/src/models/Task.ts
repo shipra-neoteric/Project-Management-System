@@ -33,7 +33,7 @@ const taskSchema = new Schema(
     percentComplete: { type: Number, default: 0, min: 0, max: 100 },
     predecessors: { type: [linkSchema], default: [] },
     resources: { type: [Schema.Types.ObjectId], default: [] },
-    notes: { type: String, default: '', maxlength: 5000 },
+    notes: { type: String, default: '', maxlength: 20000 },
     type: { type: Schema.Types.ObjectId, ref: 'TaskType', default: null },
     status: { type: Schema.Types.ObjectId, ref: 'Status', default: null },
     priority: { type: String, enum: PRIORITIES, default: 'normal' },

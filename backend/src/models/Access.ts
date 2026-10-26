@@ -14,6 +14,7 @@ export const PROJECT_PERMISSIONS = [
   { key: 'manage_members', label: 'Add and remove members', group: 'Project' },
   { key: 'add_subprojects', label: 'Add sub-projects', group: 'Project' },
   { key: 'delete_project', label: 'Delete the project', group: 'Project' },
+  { key: 'manage_meetings', label: 'Schedule meetings, edit agendas and minutes', group: 'Project' },
   { key: 'view_time', label: 'View everyone’s time entries and reports', group: 'Time & cost' },
   { key: 'log_time', label: 'Log own time', group: 'Time & cost' },
   { key: 'edit_time', label: 'Log and edit time for others', group: 'Time & cost' },
@@ -25,6 +26,8 @@ export const PROJECT_PERMISSIONS = [
 ] as const;
 export type ProjectPermission = (typeof PROJECT_PERMISSIONS)[number]['key'];
 export const ALL_PROJECT_PERMISSIONS = PROJECT_PERMISSIONS.map((p) => p.key) as ProjectPermission[];
+/** Permissions introduced after the first release of roles (granted once to existing built-in roles). */
+export const LATER_PERMISSIONS: ProjectPermission[] = ['manage_meetings'];
 /** Permissions that only read data — allowed on archived projects. */
 export const READ_PERMISSIONS: ProjectPermission[] = ['view_project', 'view_time', 'view_costs', 'view_budgets'];
 
@@ -33,7 +36,7 @@ export const BUILTIN_ROLES: { key: 'manager' | 'member' | 'viewer'; name: string
   {
     key: 'member',
     name: 'Member',
-    permissions: ['view_project', 'edit_tasks', 'comment', 'manage_resources', 'view_time', 'log_time', 'log_costs', 'view_budgets'],
+    permissions: ['view_project', 'edit_tasks', 'comment', 'manage_resources', 'manage_meetings', 'view_time', 'log_time', 'log_costs', 'view_budgets'],
   },
   { key: 'viewer', name: 'Viewer', permissions: ['view_project'] },
 ];
@@ -45,6 +48,8 @@ const roleSchema = new Schema(
     key: { type: String, default: null },
     permissions: { type: [String], default: [] },
     position: { type: Number, default: 0 },
+    /** Built-in roles: every default permission ever offered (so later additions are granted once). */
+    seededPermissions: { type: [String], default: undefined },
   },
   { timestamps: true },
 );

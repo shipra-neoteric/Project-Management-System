@@ -1,6 +1,7 @@
 'use client';
 
-import { Activity } from 'lucide-react';
+import { Activity, ScrollText } from 'lucide-react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
@@ -15,7 +16,7 @@ type Filter = 'all' | 'comment' | 'change' | 'files';
 
 export default function ProjectActivityPage() {
   const { id } = useParams<{ id: string }>();
-  const { openTask } = useWorkspace();
+  const { openTask, can } = useWorkspace();
   const activity = useProjectActivity(id);
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -25,16 +26,26 @@ export default function ProjectActivityPage() {
 
   return (
     <div className="space-y-3">
-      <FilterTabs<Filter>
-        value={filter}
-        onChange={setFilter}
-        tabs={[
-          { key: 'all', label: 'Everything' },
-          { key: 'comment', label: 'Comments' },
-          { key: 'change', label: 'Changes' },
-          { key: 'files', label: 'Files' },
-        ]}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <FilterTabs<Filter>
+          value={filter}
+          onChange={setFilter}
+          tabs={[
+            { key: 'all', label: 'Everything' },
+            { key: 'comment', label: 'Comments' },
+            { key: 'change', label: 'Changes' },
+            { key: 'files', label: 'Files' },
+          ]}
+        />
+        {can('manage_project') && (
+          <Link
+            href={`/audit?project=${id}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          >
+            <ScrollText className="w-4 h-4" /> Full audit trail
+          </Link>
+        )}
+      </div>
       {activity.error && <Alert>{errorMessage(activity.error)}</Alert>}
       <Card title="Latest activity (newest first)" icon={Activity}>
         <div className="p-5">

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { View } from '../models/View';
-import { assertObjectId, forbidden, notFound, parseBody } from '../utils/http';
+import { assertObjectId, forbidden, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Saved project-list views (filters/columns for the Projects page). Private, or shared by admins. */
 export const projectViewsRouter = Router();
@@ -39,7 +39,7 @@ async function loadOwn(id: unknown, user: Express.Request['user']) {
 }
 
 projectViewsRouter.patch('/:viewId', async (req, res) => {
-  const body = parseBody(schema.partial(), req.body);
+  const body = parseBody(patchSchema(schema), req.body);
   const view = await loadOwn(req.params.viewId, req.user);
   if (body.isPublic && req.user!.role !== 'Admin') throw forbidden('Only administrators can share project lists with everyone');
   view.set(body);

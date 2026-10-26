@@ -11,7 +11,7 @@ import { Setting } from '../models/Setting';
 import { Task } from '../models/Task';
 import { getCatalog } from '../services/catalog';
 import { loadRoles, roleInfo } from '../services/permissions';
-import { assertObjectId, badRequest, conflict, notFound, parseBody } from '../utils/http';
+import { assertObjectId, badRequest, conflict, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Task types, statuses, workflow, life-cycle phases and custom fields. Everyone reads; admins change. */
 export const workSettingsRouter = Router();
@@ -108,7 +108,7 @@ for (const path of Object.keys(schemas) as Path[]) {
   });
 
   workSettingsRouter.patch(`/${path}/:itemId`, requireGlobal('manage_work_settings'), async (req, res) => {
-    const body = parseBody(schema.partial(), req.body) as Record<string, unknown> & { name?: string; isDefault?: boolean; kind?: string; scope?: string; options?: { _id?: string; name: string }[] };
+    const body = parseBody(patchSchema(schema), req.body) as Record<string, unknown> & { name?: string; isDefault?: boolean; kind?: string; scope?: string; options?: { _id?: string; name: string }[] };
     const id = assertObjectId(req.params.itemId, label);
     const existing = await Model.findById(id).lean<Record<string, unknown>>();
     if (!existing) throw notFound(label);

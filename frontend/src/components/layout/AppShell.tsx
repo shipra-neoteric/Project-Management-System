@@ -6,6 +6,9 @@ import {
   KeyRound,
   Timer,
   UsersRound,
+  ScrollText,
+  BookOpen,
+  Webhook,
   ChevronsLeft,
   ChevronsRight,
   FolderKanban,
@@ -29,12 +32,14 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PageLoader } from '@/components/ui/Feedback';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './Notifications';
+import { LiveIndicator } from './LiveIndicator';
 import { useOrgSettings, useProjects } from '@/features/queries';
 import { api } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/alerts';
 import { SLOW_EVENT } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { hasGlobal } from '@/lib/permissions';
+import { TwoFactorBanner } from '@/features/security/TwoFactorBanner';
 import type { GlobalPermission } from '@/lib/types';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/lib/theme';
@@ -68,7 +73,11 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { href: '/work-settings', label: 'Work settings', icon: ListChecks, perm: 'manage_work_settings' },
       { href: '/settings', label: 'Organisation', icon: Settings, perm: 'admin' },
       // [admin nav: security-integrations]
+      { href: '/webhooks', label: 'Webhooks', icon: Webhook, perm: 'admin' },
+      // Everyone can open API docs from My profile → API tokens; the sidebar link is for admins.
+      { href: '/api-docs', label: 'API docs', icon: BookOpen, perm: 'admin' },
       // [admin nav: platform]
+      { href: '/audit', label: 'Audit trail', icon: ScrollText, perm: 'admin' },
     ],
   },
 ];
@@ -137,6 +146,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Header onMenu={() => setMobileOpen(true)} orgName={orgName} />
         <SlowServerBanner />
         <VerifyEmailBanner />
+        <TwoFactorBanner />
         <main className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="p-3 sm:p-4 lg:p-6">{children}</div>
         </main>
@@ -258,6 +268,7 @@ function Header({ onMenu, orgName }: { onMenu: () => void; orgName: string }) {
         </div>
         <div className="flex items-center gap-2">
           <GlobalSearch />
+          <LiveIndicator />
           <NotificationBell />
           <button
             onClick={toggleTheme}

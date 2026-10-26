@@ -79,6 +79,40 @@ Without SMTP the app works fully, but emails (notifications, password reset, ema
 
 Attachments are stored in MongoDB Atlas (GridFS). The free M0 cluster has 512 MB, so keep an eye on usage if teams upload many large files.
 
+## 6c. Single sign-on (optional) — Nexora, Microsoft, Google, Keycloak…
+
+PMS supports **OpenID Connect** (authorization code flow with PKCE). When it is configured, the login page shows a **“Sign in with &lt;name&gt;”** button.
+
+**1. Register PMS as an application in your identity provider** (for Nexora: in its admin/OAuth client settings):
+
+| Setting | Value |
+|---|---|
+| Application type | Web application (confidential client, has a client secret) |
+| Redirect / callback URI | `https://<your-render-api>.onrender.com/api/auth/sso/callback` |
+| Scopes | `openid email profile` |
+| Grant type | Authorization code (PKCE S256 is sent; the client secret is sent in the request body — `client_secret_post`) |
+
+**2. Add these environment variables on Render** (Environment tab), then redeploy:
+
+| Variable | Example |
+|---|---|
+| `OIDC_ISSUER` | `https://login.nexora.example.com` — the issuer URL; `<issuer>/.well-known/openid-configuration` must exist |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | from step 1 |
+| `OIDC_DISPLAY_NAME` | `Nexora` (button label) |
+| `OIDC_AUTO_CREATE_USERS` | `true` to create an account on first sign-in; `false` (default) = only existing or invited users |
+| `OIDC_ALLOWED_DOMAINS` | `neotericgrp.in` (comma-separated; empty = any) |
+| `OIDC_REDIRECT_URI` | only if the API sits behind another domain/proxy |
+
+**How accounts are matched:** by the provider’s user id (`sub`); on first sign-in, an existing PMS account with the same **verified** email is linked automatically (including pending invitations). Deactivated users cannot sign in. People who sign in with SSO skip the app’s own two-factor step — the provider’s MFA applies.
+
+**What Nexora must support:** an OpenID Connect discovery document, the authorization code flow, signed ID tokens (RS256/ES256 via a JWKS endpoint) containing `sub`, `email` and ideally `email_verified` and `name`. If Nexora only offers a custom login (no OpenID Connect), a small bridge would be needed instead.
+
+## 6d. Two-factor authentication, API tokens and webhooks
+
+- **Two-factor authentication:** each user turns it on under **My profile** (any authenticator app; 10 one-time backup codes). Administrators can require it for everyone under **Organisation → Security** and reset it for someone who lost their phone (`POST /api/auth/2fa/reset/:userId`).
+- **API tokens:** **My profile → API tokens** (read-only or read & write, optional expiry). The API is described at `/api/openapi.json` and in the app under **API docs**.
+- **Webhooks:** **Admin → Webhooks**. URLs must use `https://`; private network addresses are blocked in production. Each request is signed (`X-PMS-Signature: sha256=<HMAC of the body>`).
+
 ## 7. Updating
 
 `git push` to `main` → Render and Vercel both redeploy automatically.

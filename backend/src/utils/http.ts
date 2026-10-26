@@ -1,5 +1,5 @@
 import { isValidObjectId } from 'mongoose';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 export class HttpError extends Error {
   constructor(
@@ -31,4 +31,19 @@ export function assertObjectId(value: unknown, what = 'Resource'): string {
   const id = typeof value === 'string' ? value : '';
   if (!id || !isValidObjectId(id)) throw notFound(what);
   return id;
+}
+
+/**
+ * Partial version of an object schema for PATCH bodies. Unlike `schema.partial()`, fields left out stay
+ * undefined: zod would otherwise fill in their `.default()` values and silently reset them.
+ */
+export function patchSchema<T extends z.ZodObject>(schema: T): ReturnType<T['partial']> {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, field]) => {
+      let inner = field as z.ZodType;
+      while (inner instanceof z.ZodDefault || inner instanceof z.ZodPrefault) inner = (inner as z.ZodDefault).unwrap() as z.ZodType;
+      return [key, inner.optional()];
+    }),
+  );
+  return z.object(shape) as unknown as ReturnType<T['partial']>;
 }

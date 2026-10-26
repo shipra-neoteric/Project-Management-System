@@ -12,7 +12,10 @@ interface AuthContextValue {
   user: User | null;
   status: AuthStatus;
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Signs in, or returns a challenge when the account uses two-factor authentication. */
+  login: (email: string, password: string) => Promise<{ challenge: string } | null>;
+  /** Second sign-in step: a 6-digit code or a backup code. */
+  verifyTwoFactor: (challenge: string, code: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   /** Replace the cached user (after profile changes, verification, favorites…). */
@@ -54,7 +57,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      handleAuth(await api('/auth/login', { method: 'POST', body: { email, password } }));
+      const res = await api<{ token: string; user: User } | { twoFactorRequired: true; challenge: string }>('/auth/login', { method: 'POST', body: { email, password } });
+      if ('twoFactorRequired' in res) return { challenge: res.challenge };
+      handleAuth(res);
+      return null;
+    },
+    [handleAuth],
+  );
+
+  const verifyTwoFactor = useCallback(
+    async (challenge: string, code: string) => {
+      handleAuth(await api('/auth/2fa/verify', { method: 'POST', body: { challenge, code } }));
     },
     [handleAuth],
   );
@@ -80,8 +93,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, isAdmin: user?.role === 'Admin', login, register, logout, setUser, refreshUser, signIn: handleAuth }),
-    [user, status, login, register, logout, refreshUser, handleAuth],
+    () => ({ user, status, isAdmin: user?.role === 'Admin', login, verifyTwoFactor, register, logout, setUser, refreshUser, signIn: handleAuth }),
+    [user, status, login, verifyTwoFactor, register, logout, refreshUser, handleAuth],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

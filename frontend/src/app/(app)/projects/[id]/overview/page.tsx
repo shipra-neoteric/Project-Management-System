@@ -9,6 +9,7 @@ import { BarList, LifecycleStrip, StackedShare } from '@/components/charts/Chart
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Alert, EmptyState, PageLoader, ProgressBar } from '@/components/ui/Feedback';
+import { RichTextView } from '@/components/ui/RichTextEditor';
 import { Card, KpiCard, KpiGrid, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
 import { useWorkspace } from '@/features/project-context';
@@ -58,7 +59,7 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
         <Card title="About this project" icon={Info}>
           <div className="p-5 space-y-4">
-            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{project.description || <span className="text-gray-400">No description.</span>}</p>
+            <RichTextView value={project.description} empty={<p className="text-sm text-gray-400">No description.</p>} />
             <dl className="grid grid-cols-2 gap-4">
               <Meta label="Type">{KIND_LABEL[project.kind]}</Meta>
               <Meta label="Status">

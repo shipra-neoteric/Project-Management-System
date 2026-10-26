@@ -7,7 +7,7 @@ import { Project } from '../models/Project';
 import { Setting } from '../models/Setting';
 import { User } from '../models/User';
 import { ensureAccessDefaults, invalidateRoles, loadRoles } from '../services/permissions';
-import { assertObjectId, badRequest, conflict, notFound, parseBody } from '../utils/http';
+import { assertObjectId, badRequest, conflict, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Project roles, global roles and groups. */
 export const accessRouter = Router();
@@ -35,7 +35,7 @@ accessRouter.post('/roles', requireAdmin, async (req, res) => {
 });
 
 accessRouter.patch('/roles/:roleId', requireAdmin, async (req, res) => {
-  const body = parseBody(roleSchema.partial(), req.body);
+  const body = parseBody(patchSchema(roleSchema), req.body);
   const role = await Role.findById(assertObjectId(req.params.roleId, 'Role'));
   if (!role) throw notFound('Role');
   if (body.name) role.name = body.name;
@@ -75,7 +75,7 @@ accessRouter.post('/global-roles', requireAdmin, async (req, res) => {
 });
 
 accessRouter.patch('/global-roles/:roleId', requireAdmin, async (req, res) => {
-  const body = parseBody(globalRoleSchema.partial(), req.body);
+  const body = parseBody(patchSchema(globalRoleSchema), req.body);
   const role = await GlobalRole.findByIdAndUpdate(assertObjectId(req.params.roleId, 'Role'), { $set: body }, { new: true });
   if (!role) throw notFound('Role');
   res.json({ role });
@@ -110,7 +110,7 @@ accessRouter.post('/groups', requireGlobal('manage_users'), async (req, res) => 
 });
 
 accessRouter.patch('/groups/:groupId', requireGlobal('manage_users'), async (req, res) => {
-  const body = parseBody(groupSchema.partial(), req.body);
+  const body = parseBody(patchSchema(groupSchema), req.body);
   const group = await Group.findByIdAndUpdate(
     assertObjectId(req.params.groupId, 'Group'),
     { $set: { ...body, ...(body.members ? { members: [...new Set(body.members)] } : {}) } },

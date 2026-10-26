@@ -16,6 +16,7 @@ import { recordTaskCreated, recordTaskDeleted, recordTaskUpdated } from '../serv
 import { cleanCustomValues, getCatalog, isTransitionAllowed, type Catalog } from '../services/catalog';
 import { loadTasks, mutatePlan, serializeProject, withSpentHours } from '../services/planService';
 import { assertObjectId, badRequest, forbidden, notFound, parseBody } from '../utils/http';
+import { sanitizeRichText } from '../utils/richText';
 
 /** Mounted at /api/projects/:id/tasks */
 export const tasksRouter = Router({ mergeParams: true });
@@ -58,7 +59,7 @@ const updateSchema = attributeSchema.extend({
     .optional(),
   relations: z.array(z.object({ task: objectId, type: z.enum(RELATION_TYPES).default('relates') })).max(100).optional(),
   resources: z.array(objectId).max(50).optional(),
-  notes: z.string().max(5000).optional(),
+  notes: z.string().max(20000).transform(sanitizeRichText).optional(),
 });
 
 const idsSchema = z.array(objectId).min(1, 'Select at least one task').max(1000);
@@ -159,7 +160,7 @@ async function prepareAttributes(project: ProjectDoc, patch: z.infer<typeof attr
 }
 
 
-function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<PlanTask> & Pick<PlanTask, 'name' | 'duration' | 'type' | 'status'>): PlanTask {
+export function newTask(project: ProjectDoc, userId: Types.ObjectId, fields: Partial<PlanTask> & Pick<PlanTask, 'name' | 'duration' | 'type' | 'status'>): PlanTask {
   return {
     _id: new Types.ObjectId(),
     project: project._id,

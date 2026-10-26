@@ -9,6 +9,7 @@ import { BulkBar } from '@/components/views/BulkBar';
 import { TaskCell } from '@/components/views/TaskCell';
 import { useViewState } from '@/components/views/useViewState';
 import { ViewToolbar } from '@/components/views/ViewToolbar';
+import { ImportPlanButton } from '@/features/ImportPlanDrawer';
 import { useWorkspace } from '@/features/project-context';
 import { useTaskMutations } from '@/features/queries';
 import { toastError } from '@/lib/alerts';
@@ -84,6 +85,7 @@ export default function TablePage() {
         >
           <Download className="w-4 h-4" /> Excel
         </button>
+        {canEdit && <ImportPlanButton projectId={projectId} />}
         {canEdit && (
           <Button size="sm" variant="primary" icon={Plus} onClick={addTask}>
             Task

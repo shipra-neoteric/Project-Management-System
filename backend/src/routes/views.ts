@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { hasPerm, loadProject } from '../middleware/projectAccess';
 import { View, VIEW_KINDS } from '../models/View';
-import { assertObjectId, forbidden, notFound, parseBody } from '../utils/http';
+import { assertObjectId, forbidden, notFound, parseBody, patchSchema } from '../utils/http';
 
 /** Mounted at /api/projects/:id/views */
 export const viewsRouter = Router({ mergeParams: true });
@@ -51,7 +51,7 @@ async function loadOwnView(req: Parameters<Parameters<typeof viewsRouter.patch>[
 }
 
 viewsRouter.patch('/:viewId', loadProject('viewer'), async (req, res) => {
-  const body = parseBody(createSchema.partial(), req.body);
+  const body = parseBody(patchSchema(createSchema), req.body);
   const view = await loadOwnView(req);
   if (body.isPublic && !view.isPublic && !hasPerm(req, 'manage_public_views')) {
     throw forbidden('Only managers can share views with the whole project');

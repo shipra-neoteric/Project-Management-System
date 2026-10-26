@@ -6,6 +6,7 @@ import { Group } from '../models/Access';
 import { accessFor, can, hasGlobal, projectPeopleIds, roleInfo } from '../services/permissions';
 import { Baseline } from '../models/Baseline';
 import { Budget, CostEntry, HourlyRate, TimeEntry } from '../models/Finance';
+import { Meeting } from '../models/Meeting';
 import { Journal } from '../models/Journal';
 import { Notification } from '../models/Notification';
 import { PROGRESS_MODES, Project, PROJECT_KINDS, PROJECT_MODULES, PROJECT_STATUSES, type ProjectDoc } from '../models/Project';
@@ -18,6 +19,7 @@ import { cleanCustomValues, generateProjectKey, getCatalog } from '../services/c
 import { loadTasks, mutatePlan, serializeProject } from '../services/planService';
 import { copyProjectContent } from '../services/projectCopy';
 import { assertObjectId, badRequest, conflict, forbidden, notFound, parseBody } from '../utils/http';
+import { sanitizeRichText } from '../utils/richText';
 import { deleteAttachmentFiles } from './attachments';
 import { journalsFor } from './taskActivity';
 
@@ -32,7 +34,7 @@ const copyOptionsSchema = z
 
 const createSchema = z.object({
   name: z.string().trim().min(1, 'Project name is required').max(120),
-  description: z.string().max(2000).optional().default(''),
+  description: z.string().max(10000).optional().default('').transform(sanitizeRichText),
   startDate: isoDate,
   status: z.enum(PROJECT_STATUSES).optional().default('active'),
   kind: z.enum(PROJECT_KINDS).optional().default('project'),
@@ -56,7 +58,7 @@ const updateSchema = z.object({
     .array(z.object({ _id: z.string().optional(), name: z.string().trim().min(1, 'Category name is required').max(60) }))
     .max(100)
     .optional(),
-  description: z.string().max(2000).optional(),
+  description: z.string().max(10000).transform(sanitizeRichText).optional(),
   status: z.enum(PROJECT_STATUSES).optional(),
   startDate: isoDate.optional(),
   workingDays: z.array(z.number().int().min(0).max(6)).min(1, 'Select at least one working day').max(7).optional(),
@@ -270,6 +272,7 @@ projectsRouter.delete('/:id', loadProject('owner', { allowArchived: true }), asy
     CostEntry.deleteMany({ project: id }),
     Budget.deleteMany({ project: id }),
     HourlyRate.deleteMany({ project: id }),
+    Meeting.deleteMany({ project: id }),
     // Sub-projects move up to this project's parent.
     Project.updateMany({ parent: id }, { $set: { parent: req.project!.parent ?? null } }),
     User.updateMany({ favorites: id }, { $pull: { favorites: id } }),

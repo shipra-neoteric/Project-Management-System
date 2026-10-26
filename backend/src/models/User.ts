@@ -30,6 +30,28 @@ const userSchema = new Schema(
     favorites: { type: [Schema.Types.ObjectId], ref: 'Project', default: [] },
     /** Ordered list of dashboard widget ids the user has switched on (null = defaults). */
     dashboardWidgets: { type: [String], default: undefined },
+    /** Date reminders: alert N days before start/finish (0 = off), overdue alerts, daily email digest. */
+    reminders: {
+      dueSoonDays: { type: Number, default: 1, min: 0, max: 14 },
+      overdue: { type: Boolean, default: true },
+      digest: { type: Boolean, default: false },
+      assigned: { type: Boolean, default: true },
+      accountable: { type: Boolean, default: true },
+      watched: { type: Boolean, default: false },
+    },
+    /** Secret token for read-only calendar (iCal) feeds; null when no feed was created. */
+    icalToken: { type: String, default: null, select: false },
+    icalTokenCreatedAt: { type: Date, default: null },
+    /** Single sign-on identity: "<issuer>|<sub>" from the OpenID Connect provider. */
+    ssoSubject: { type: String, default: undefined, index: { unique: true, sparse: true } },
+    /** Two-factor authentication (TOTP). Secrets and backup codes never leave the server. */
+    totpEnabled: { type: Boolean, default: false },
+    totpSecret: { type: String, default: null, select: false },
+    totpPendingSecret: { type: String, default: null, select: false },
+    /** SHA-256 hashes of unused one-time backup codes. */
+    totpBackupCodes: { type: [String], default: [], select: false },
+    /** Last accepted 30-second time step, so a code cannot be replayed. */
+    totpLastStep: { type: Number, default: 0, select: false },
   },
   { timestamps: true },
 );
@@ -37,6 +59,19 @@ const userSchema = new Schema(
 export type UserAttrs = InferSchemaType<typeof userSchema>;
 export type UserDoc = HydratedDocument<UserAttrs>;
 export const User = model('User', userSchema);
+
+/** Reminder preferences with defaults filled in. */
+export function reminderPrefs(user: UserDoc) {
+  const r = user.reminders;
+  return {
+    dueSoonDays: r?.dueSoonDays ?? 1,
+    overdue: r?.overdue !== false,
+    digest: !!r?.digest,
+    assigned: r?.assigned !== false,
+    accountable: r?.accountable !== false,
+    watched: !!r?.watched,
+  };
+}
 
 /** Shape returned to clients — never includes the password hash. */
 export function publicUser(user: UserDoc) {
@@ -54,7 +89,11 @@ export function publicUser(user: UserDoc) {
     invited: !!user.invited,
     globalRoles: (user.globalRoles ?? []).map(String),
     workSchedule: { hoursPerDay: user.workSchedule?.hoursPerDay ?? 8, workingDays: user.workSchedule?.workingDays ?? [1, 2, 3, 4, 5] },
+    reminders: reminderPrefs(user),
+    calendarFeed: !!user.icalTokenCreatedAt,
     /** Effective organisation-wide permissions (filled in by requireAuth). */
     globalPermissions: [...((user.$locals?.globalPerms as Set<string> | undefined) ?? [])],
+    twoFactorEnabled: !!user.totpEnabled,
+    sso: !!user.ssoSubject,
   };
 }

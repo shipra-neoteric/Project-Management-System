@@ -5,6 +5,7 @@ import {
   GLOBAL_PERMISSIONS,
   GlobalRole,
   Group,
+  LATER_PERMISSIONS,
   Role,
   type GlobalPermission,
   type ProjectPermission,
@@ -23,12 +24,32 @@ let cache: { roles: Map<string, RoleInfo>; loadedAt: number } | null = null;
 let seeding: Promise<void> | null = null;
 const TTL_MS = 30_000;
 
+/**
+ * Creates missing built-in roles and grants permissions added in later versions once to existing
+ * ones; anything an admin removed afterwards stays removed (seededPermissions remembers what was offered).
+ */
+export async function upgradeBuiltinRoles() {
+  for (const [i, r] of BUILTIN_ROLES.entries()) {
+    const existing = await Role.findOne({ key: r.key });
+    if (!existing) {
+      await Role.create({ ...r, position: i, seededPermissions: r.permissions });
+      continue;
+    }
+    const offered = existing.seededPermissions?.length ? existing.seededPermissions : r.permissions.filter((p) => !LATER_PERMISSIONS.includes(p));
+    const fresh = r.permissions.filter((p) => !offered.includes(p));
+    if (fresh.length || !existing.seededPermissions?.length) {
+      existing.permissions = [...new Set([...existing.permissions, ...fresh])];
+      existing.seededPermissions = [...new Set([...offered, ...fresh])];
+      await existing.save();
+    }
+  }
+  invalidateRoles();
+}
+
 /** Creates the built-in project roles and the default global role on first use. Idempotent. */
 export function ensureAccessDefaults(): Promise<void> {
   seeding ??= (async () => {
-    for (const [i, r] of BUILTIN_ROLES.entries()) {
-      if (!(await Role.exists({ key: r.key }))) await Role.create({ ...r, position: i });
-    }
+    await upgradeBuiltinRoles();
     if ((await GlobalRole.estimatedDocumentCount()) === 0) {
       // Everyone may create projects by default — admins can change this in Roles & permissions.
       await GlobalRole.create({ name: 'Everyone', permissions: ['create_projects'], isDefault: true });

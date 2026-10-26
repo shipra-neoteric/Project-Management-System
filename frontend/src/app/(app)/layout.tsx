@@ -1,5 +1,10 @@
 import { AppShell } from '@/components/layout/AppShell';
+import { LiveUpdatesProvider } from '@/features/LiveUpdates';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <LiveUpdatesProvider>
+      <AppShell>{children}</AppShell>
+    </LiveUpdatesProvider>
+  );
 }

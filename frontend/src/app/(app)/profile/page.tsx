@@ -7,7 +7,11 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Field, inputCls } from '@/components/ui/Field';
 import { Card, Page, PageHeader } from '@/components/ui/Layout';
 import { useTimeOff } from '@/features/queries';
+import { CalendarFeedCard } from '@/features/CalendarFeedCard';
+import { RemindersCard } from '@/features/RemindersCard';
 import { DEFAULT_SCHEDULE, WorkScheduleFields } from '@/features/WorkScheduleFields';
+import { ApiTokensCard } from '@/features/security/ApiTokensCard';
+import { TwoFactorCard } from '@/features/security/TwoFactorCard';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -105,7 +109,11 @@ export default function ProfilePage() {
 
         <TimeOffCard userId={user._id} />
         {/* [profile cards: import-scheduling] */}
+        <RemindersCard />
+        <CalendarFeedCard />
         {/* [profile cards: security-integrations] */}
+        <TwoFactorCard />
+        <ApiTokensCard />
 
         <Card title="Change password" icon={KeyRound}>
           <form

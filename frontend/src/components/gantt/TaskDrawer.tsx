@@ -14,7 +14,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { Alert } from '@/components/ui/Feedback';
-import { Field, inputCls, Sec, textareaCls } from '@/components/ui/Field';
+import { Field, inputCls, Sec } from '@/components/ui/Field';
+import { RichTextEditor, RichTextView } from '@/components/ui/RichTextEditor';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { useWorkspace } from '@/features/project-context';
 import { useTaskMutations, type TaskPatch } from '@/features/queries';
@@ -541,7 +542,11 @@ function TaskDrawer({ task, onClose }: { task: Task; onClose: () => void }) {
 
         {shown('notes') && <section>
           <Sec title="Notes" icon={StickyNote} />
-          <textarea rows={4} className={textareaCls} value={draft.notes} disabled={readOnly} onChange={(e) => set('notes', e.target.value)} placeholder="Details, links, acceptance criteria…" aria-label="Notes" />
+          {readOnly ? (
+            <RichTextView value={draft.notes} empty={<p className="text-sm text-gray-400 dark:text-gray-500">No notes</p>} />
+          ) : (
+            <RichTextEditor value={draft.notes} onChange={(html) => set('notes', html)} placeholder="Details, links, acceptance criteria…" />
+          )}
         </section>}
 
         {task.baselineStart && (

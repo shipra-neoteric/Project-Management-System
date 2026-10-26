@@ -6,6 +6,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  /** e.g. a meeting invitation (.ics). */
+  attachments?: { filename: string; content: string; contentType: string }[];
 }
 
 /** Messages "sent" while SMTP is not configured (used by tests and local development). */

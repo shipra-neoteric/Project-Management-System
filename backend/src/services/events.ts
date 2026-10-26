@@ -23,6 +23,8 @@ export interface AppEvent {
   /** The record the change was about, when known (the last id in the path, or the id of a created record). */
   entityId: string | null;
   requestId?: string;
+  ip?: string;
+  userAgent?: string;
   /** Request body with secrets removed (used by the audit trail; never sent to webhooks as-is). */
   body?: unknown;
 }

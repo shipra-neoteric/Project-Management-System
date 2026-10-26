@@ -27,7 +27,7 @@ const projectSchema = new Schema(
     key: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
     /** Last task number handed out in this project. */
     taskSeq: { type: Number, default: 0 },
-    description: { type: String, default: '', maxlength: 2000 },
+    description: { type: String, default: '', maxlength: 10000 },
     /** project = plan with tasks; program / portfolio = containers that roll up their sub-projects. */
     kind: { type: String, enum: PROJECT_KINDS, default: 'project' },
     /** How task % complete is calculated: typed in, from work/remaining work, or from the status. */

@@ -10,6 +10,7 @@ import { Card, Page, PageHeader } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { AdminGate } from '@/features/AdminGate';
 import { keys, useOrgSettings, useUpdateOrgSettings } from '@/features/queries';
+import { SecuritySettingsCard } from '@/features/security/SecuritySettingsCard';
 import { toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -140,6 +141,7 @@ function OrgSettingsContent() {
             <p className="text-xs text-gray-400">Gantt bar at 60% complete</p>
           </div>
         </Card>
+        <SecuritySettingsCard />
       </div>
     </Page>
   );

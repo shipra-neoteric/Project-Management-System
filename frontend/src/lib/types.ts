@@ -8,6 +8,7 @@ export type ProjectPermission =
   | 'comment'
   | 'manage_resources'
   | 'manage_public_views'
+  | 'manage_meetings'
   | 'manage_project'
   | 'manage_members'
   | 'add_subprojects'
@@ -42,6 +43,22 @@ export interface User {
   globalRoles?: string[];
   workSchedule?: WorkSchedule;
   globalPermissions?: GlobalPermission[];
+  reminders?: ReminderPrefs;
+  /** A calendar (iCal) feed link exists. */
+  calendarFeed?: boolean;
+  twoFactorEnabled?: boolean;
+  /** Linked to a single sign-on (OpenID Connect) identity. */
+  sso?: boolean;
+}
+
+/** Date reminders: alert N days before start/finish (0 = off), overdue alerts, daily email digest. */
+export interface ReminderPrefs {
+  dueSoonDays: number;
+  overdue: boolean;
+  digest: boolean;
+  assigned: boolean;
+  accountable: boolean;
+  watched: boolean;
 }
 
 export interface WorkSchedule {
@@ -195,6 +212,8 @@ export interface OrgSettings {
   orgName: string;
   themeColor: string;
   currency?: string;
+  /** Everyone signing in with a password must use two-factor authentication. */
+  require2fa?: boolean;
 }
 
 export interface DashboardTask {
@@ -293,8 +312,10 @@ export interface AppNotification {
   projectName: string;
   task: string | null;
   taskName: string;
-  reason: 'mentioned' | 'assigned' | 'accountable' | 'commented' | 'updated' | 'watched';
+  reason: 'mentioned' | 'assigned' | 'accountable' | 'commented' | 'updated' | 'watched' | 'meeting' | 'due_soon' | 'overdue';
   summary: string;
+  /** App path to open instead of the task (e.g. a meeting). */
+  link?: string;
   read: boolean;
   createdAt: string;
 }

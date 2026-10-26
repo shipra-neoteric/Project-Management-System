@@ -1,4 +1,4 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
 const TOKEN_KEY = 'pms_token';
 /** Render's free tier can take ~60 s to wake up, so allow plenty of time. */
 const TIMEOUT_MS = 75_000;

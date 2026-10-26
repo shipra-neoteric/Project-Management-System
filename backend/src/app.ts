@@ -6,6 +6,7 @@ import { requireAuth } from './middleware/auth';
 import { changeEvents } from './middleware/changeEvents';
 import { errorHandler, notFoundHandler, requestId } from './middleware/errors';
 import { authRouter } from './routes/auth';
+import { meetingsRouter } from './routes/meetings';
 import { dashboardRouter } from './routes/dashboard';
 import { projectsRouter } from './routes/projects';
 import { resourcesRouter } from './routes/resources';
@@ -22,6 +23,14 @@ import { taskActivityRouter } from './routes/taskActivity';
 import { accessRouter } from './routes/access';
 import { financeRouter } from './routes/finance';
 import { timeRouter } from './routes/time';
+import { icalRouter, jobsRouter, schedulingRouter } from './routes/scheduling';
+import { auditRouter } from './routes/audit';
+import { liveStreamRouter, liveTicketRouter } from './routes/live';
+import { startAuditTrail } from './services/audit';
+import { openapi } from './openapi';
+import { apiTokensRouter } from './routes/apiTokens';
+import { ssoRouter } from './routes/sso';
+import { webhooksRouter } from './routes/webhooks';
 
 export function createApp() {
   const app = express();
@@ -67,9 +76,21 @@ export function createApp() {
   app.use('/api/projects/:id', requireAuth, financeRouter);
   app.use('/api/projects', requireAuth, projectsRouter);
   // [import-scheduling routes]
+  app.use('/api/ical', icalRouter); // public: the secret token in the URL identifies the person
+  app.use('/api/jobs', jobsRouter); // public: protected by X-Cron-Secret
+  app.use('/api', schedulingRouter); // signs in on its own paths only (/import, /reminders, /calendar-feed)
   // [collaboration routes]
+  app.use('/api/projects/:id/meetings', requireAuth, meetingsRouter);
   // [security-integrations routes]
+  app.use('/api/auth/sso', ssoRouter); // public: OpenID Connect sign-in
+  app.get('/api/openapi.json', (_req, res) => void res.json(openapi)); // public: API description
+  app.use('/api/tokens', requireAuth, apiTokensRouter);
+  app.use('/api/webhooks', requireAuth, webhooksRouter);
   // [platform routes]
+  startAuditTrail();
+  app.use('/api/events', liveStreamRouter); // authenticated by a single-use ticket, not the JWT
+  app.use('/api/events', requireAuth, liveTicketRouter);
+  app.use('/api/audit', requireAuth, auditRouter);
   app.use('/api', requireAuth, timeRouter);
   app.use('/api', requireAuth, accessRouter);
 

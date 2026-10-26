@@ -135,6 +135,9 @@ const REASON_TEXT: Record<NotificationReason, string> = {
   commented: 'commented on',
   updated: 'updated',
   watched: 'updated',
+  due_soon: 'reminded you about',
+  overdue: 'reminded you about',
+  meeting: 'invited you to',
 };
 
 async function notify(

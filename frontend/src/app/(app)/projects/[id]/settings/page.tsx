@@ -7,10 +7,12 @@ import { Badge } from '@/components/ui/Badge';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Alert, PageLoader } from '@/components/ui/Feedback';
 import { Field, inputCls } from '@/components/ui/Field';
+import { RichTextView } from '@/components/ui/RichTextEditor';
 import { Card, FilterTabs, rowCls, tableCls, tbodyCls, td, th, theadCls } from '@/components/ui/Layout';
 import { ThemedSelect } from '@/components/ui/ThemedSelect';
 import { ProjectDrawer } from '@/features/ProjectDrawer';
 import { AttributesCard, BaselinesCard, CopyCard, LifecycleCard, ModulesCard, ProgressModeCard, ProjectRatesCard } from '@/features/ProjectSettingsCards';
+import { ProjectCalendarCard } from '@/features/CalendarFeedCard';
 import { useDeleteProject, useGroups, useMembers, useProject, useRoles, useUpdateProject, useUserAdmin, useUsers } from '@/features/queries';
 import { confirmDanger, toastError, toastSuccess } from '@/lib/alerts';
 import { errorMessage } from '@/lib/api';
@@ -53,7 +55,9 @@ export default function ProjectSettingsPage() {
           ))}
           <div className="col-span-2">
             <dt className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Description</dt>
-            <dd className="text-sm text-gray-700 dark:text-gray-300 mt-1 whitespace-pre-wrap">{project.description || '—'}</dd>
+            <dd className="mt-1">
+              <RichTextView value={project.description} empty="—" />
+            </dd>
           </div>
         </dl>
       </Card>
@@ -68,6 +72,7 @@ export default function ProjectSettingsPage() {
       <ProjectRatesCard project={project} people={[...projectPeople(project).values()]} />
       <ModulesCard project={project} canManage={canManage} />
       <CopyCard project={project} canManage={canManage} />
+      <ProjectCalendarCard projectId={project._id} />
       {can(project, 'delete_project') && <DangerZone project={project} />}
 
       <ProjectDrawer open={editOpen} project={project} onClose={() => setEditOpen(false)} />

@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Avatar, StatusBadge, TypeLabel } from '@/components/ui/TaskBits';
 import { cn } from '@/lib/cn';
 import { fmtShort } from '@/lib/dates';
+import { richTextExcerpt } from '@/lib/richText';
 import type { QueryContext } from '@/lib/query';
 import { taskStatus } from '@/lib/status';
 import type { Task } from '@/lib/types';
@@ -167,7 +168,7 @@ export const TaskGrid = memo(function TaskGrid(props: TaskGridProps) {
                 </span>
               )}
               {status !== 'overdue' && status !== 'completed' && !t.constraintStart && t.notes && (
-                <span title={t.notes}>
+                <span title={richTextExcerpt(t.notes, 300)}>
                   <StickyNote className="w-3.5 h-3.5 text-gray-400" />
                 </span>
               )}

@@ -7,7 +7,7 @@
 import { MongoMemoryServer } from 'mongodb-memory-server-core';
 
 async function main() {
-  const mongo = await MongoMemoryServer.create();
+  const mongo = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } });
   process.env.MONGODB_URI = mongo.getUri('pms');
   process.env.JWT_SECRET ??= 'local-demo-secret-local-demo-secret-123456';
   console.log('In-memory MongoDB started (data is NOT saved when you stop this process)');

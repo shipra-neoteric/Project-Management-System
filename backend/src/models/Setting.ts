@@ -15,6 +15,8 @@ const settingSchema = new Schema(
      * A role without an entry may change to any status. Owners/admins are never restricted.
      */
     workflow: { type: Schema.Types.Mixed, default: {} },
+    /** Everyone signing in with a password must set up two-factor authentication. */
+    require2fa: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
